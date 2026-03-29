@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+
+output/
+plots_lvqq/
+logs/
+
+ml/models/
+
+paper/*.aux
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.pdf
+paper/*.xdv
+paper/cutflow_data.json
+
+*.log
