@@ -24,8 +24,14 @@ The code is organized as a single analysis workflow driven by `run_lvqq.py`.
   XGBoost training, score application, and `pyhf` fit code.
 - `plots_lvqq.py`
   Cutflow and kinematic plotting.
+  The `plots` workflow step also refreshes the paper ROC figure
+  `roc_curve.*` together with the support figures `pairing_validation.*`
+  and `feynman_diagram.*`.
 - `paper/`
   Note source and helper script for support figures.
+- `ml/regenerate_roc.py`
+  Regenerates the paper ROC figure from the saved 5-fold scores and can also
+  produce a separate train/test diagnostic ROC.
 
 ## Default sample configuration
 

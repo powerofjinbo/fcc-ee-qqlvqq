@@ -62,12 +62,17 @@ def step_fit() -> None:
     run_bash(f"python3 ml/fit_profile_likelihood.py --model-dir {MODEL_DIR}")
 
 
+def step_roc_plot() -> None:
+    run_bash("python3 ml/regenerate_roc.py")
+
+
 def step_supporting_figures() -> None:
     run_bash("python3 paper/generate_supporting_figures.py")
 
 
 def step_plots() -> None:
     run_bash("python3 plots_lvqq.py", needs_setup=True)
+    step_roc_plot()
     step_supporting_figures()
 
 

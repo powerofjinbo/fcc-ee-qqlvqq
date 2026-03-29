@@ -257,7 +257,9 @@ def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01, use_staterro
     import pyhf
 
     if cuts is None:
-        cuts = np.arange(0.0, 0.95, 0.05)
+        coarse_cuts = np.arange(0.0, 0.90, 0.05)
+        fine_cuts = np.arange(0.90, 1.00, 0.01)
+        cuts = np.unique(np.round(np.concatenate([coarse_cuts, fine_cuts]), 2))
 
     results = []
     for cut in cuts:
@@ -298,7 +300,7 @@ def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01, use_staterro
     return results
 
 
-def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, bins):
+def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, bins, shape_rel_unc_pct=None):
     """Generate fit diagnostic plots."""
     import matplotlib
     matplotlib.use("Agg")
@@ -309,68 +311,144 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
 
     # 1. BDT cut optimization scan
     if len(scan_results) > 1:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        fig, ax = plt.subplots(figsize=(6.0, 4.6))
 
-        cuts = [r["bdt_cut"] for r in scan_results]
-        rel_unc = [r["rel_uncertainty"] * 100 for r in scan_results]
-        s_sqrt_b = [r["s_over_sqrt_b"] for r in scan_results]
+        plot_results = [r for r in scan_results if r["bdt_cut"] >= 0.05]
+        cuts = [r["bdt_cut"] for r in plot_results]
+        rel_unc = [r["rel_uncertainty"] * 100 for r in plot_results]
 
-        ax1.plot(cuts, rel_unc, "b-o", markersize=4)
-        ax1.set_xlabel("BDT score cut")
-        ax1.set_ylabel(r"$\delta\mu/\mu$ [%]")
-        ax1.set_title("Expected relative uncertainty in a 1-bin counting fit")
-        ax1.grid(True, alpha=0.3)
+        ax.plot(cuts, rel_unc, color="#2C7FB8", marker="o", markersize=4.5, linewidth=2.0)
+        ax.set_xlabel("BDT score threshold")
+        ax.set_ylabel(r"Expected $\delta\mu/\mu$ [%]")
+        ax.set_title("1-bin counting reference scan")
+        ax.grid(True, alpha=0.25)
+        ax.set_xlim(0.05, 1.0)
+
+        if shape_rel_unc_pct is not None:
+            ax.axhline(
+                shape_rel_unc_pct,
+                color="#333333",
+                linestyle=(0, (4, 3)),
+                linewidth=1.4,
+                label=f"20-bin shape fit: {shape_rel_unc_pct:.2f}%",
+            )
+
         if best_result:
-            ax1.axvline(best_result["bdt_cut"], color="r", linestyle="--",
-                       label=f'Best: {best_result["rel_uncertainty"]*100:.2f}%')
-            ax1.legend()
+            best_cut = best_result["bdt_cut"]
+            best_unc = best_result["rel_uncertainty"] * 100
+            ax.axvline(best_cut, color="#D64F4F", linestyle="--", linewidth=1.4)
+            ax.scatter([best_cut], [best_unc], color="#D64F4F", zorder=5)
+            ax.annotate(
+                f"Best counting:\n{best_unc:.2f}% @ {best_cut:.2f}",
+                xy=(best_cut, best_unc),
+                xytext=(-74, 22),
+                textcoords="offset points",
+                fontsize=9,
+                bbox={"boxstyle": "round,pad=0.25", "fc": "white", "ec": "#D64F4F", "alpha": 0.92},
+                arrowprops={"arrowstyle": "->", "color": "#D64F4F", "lw": 1.1},
+            )
 
-        ax2.plot(cuts, s_sqrt_b, "r-o", markersize=4)
-        ax2.set_xlabel("BDT score cut")
-        ax2.set_ylabel(r"$S/\sqrt{B}$")
-        ax2.set_title("Signal significance vs BDT cut")
-        ax2.grid(True, alpha=0.3)
-
+        ax.legend(frameon=False, fontsize=9, loc="upper right")
         fig.tight_layout()
         fig.savefig(plots_dir / "bdt_cut_scan.pdf", dpi=150)
         fig.savefig(plots_dir / "bdt_cut_scan.png", dpi=150)
         plt.close(fig)
 
     # 2. Template shapes at best working point
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, (ax_top, ax_bottom) = plt.subplots(
+        2,
+        1,
+        figsize=(7.5, 6.8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.1, 1.25], "hspace": 0.05},
+    )
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
     bin_width = bins[1] - bins[0]
 
     # Stack backgrounds
     bkg_labels = list(bkg_hists.keys())
     bkg_arrays = [bkg_hists[k] for k in bkg_labels]
-    colors = ["#4363d8", "#e6194B", "#3cb44b", "#ffe119", "#f58231"]
+    colors = ["#5B7BD5", "#D65F5F", "#4CAF50", "#F1C84B", "#F39C5A"]
 
-    ax.hist(
+    ax_top.hist(
         [bin_centers] * len(bkg_arrays),
         bins=bins,
         weights=bkg_arrays,
         stacked=True,
         label=[f"Bkg: {l}" for l in bkg_labels],
         color=colors[:len(bkg_arrays)],
-        alpha=0.8,
+        alpha=0.88,
+    )
+
+    total_bkg = np.sum(np.asarray(bkg_arrays), axis=0)
+    ax_top.step(
+        bins[:-1],
+        total_bkg,
+        where="post",
+        color="#22313F",
+        linewidth=1.2,
+        alpha=0.95,
+        label="Total background",
     )
 
     # Signal overlay (scaled for visibility)
     sig_scale = max(1, int(sum(h.sum() for h in bkg_hists.values()) / sig_hist.sum() / 5)) if sig_hist.sum() > 0 else 1
-    ax.step(bins[:-1], sig_hist * sig_scale, where="pre", color="black",
-            linewidth=2, label=f"Signal (x{sig_scale})")
+    ax_top.step(
+        bins[:-1],
+        sig_hist * sig_scale,
+        where="post",
+        color="black",
+        linewidth=2.0,
+        label=f"Signal (x{sig_scale})",
+    )
 
-    ax.set_xlabel("BDT score")
-    ax.set_ylabel(f"Events / {bin_width:.2f}")
-    ax.set_title("BDT score templates (Asimov)")
-    ax.legend(fontsize=9)
-    ax.text(0.05, 0.95, r'$\mathbf{FCC\text{-}ee}$ Simulation',
-            transform=ax.transAxes, fontsize=10, va='top', fontstyle='italic')
-    ax.text(0.05, 0.89, r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
-            transform=ax.transAxes, fontsize=9, va='top')
-    ax.set_yscale("log")
-    ax.set_ylim(bottom=0.1)
+    ax_top.set_ylabel(f"Events / {bin_width:.2f}")
+    ax_top.set_title("BDT score templates and background composition")
+    ax_top.legend(fontsize=8.7, ncol=2, frameon=False, loc="upper center")
+    ax_top.text(0.03, 0.95, r'$\mathbf{FCC\text{-}ee}$ Simulation',
+                transform=ax_top.transAxes, fontsize=10, va='top', fontstyle='italic')
+    ax_top.text(0.03, 0.89, r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
+                transform=ax_top.transAxes, fontsize=9, va='top')
+    ax_top.set_yscale("log")
+    ax_top.set_ylim(bottom=0.1)
+    ax_top.grid(axis="y", alpha=0.22)
+
+    # Sub-dominant background composition panel (excluding WW, which dominates
+    # the absolute rate and would otherwise hide the smaller components).
+    subdominant = [
+        (label, arr, color)
+        for label, arr, color in zip(bkg_labels, bkg_arrays, colors)
+        if label != "WW"
+    ]
+    sub_total = np.sum(np.asarray([arr for _, arr, _ in subdominant]), axis=0)
+    safe_sub_total = np.where(sub_total > 0.0, sub_total, 1.0)
+    cumulative = np.zeros_like(sub_total, dtype=float)
+    for label, arr, color in subdominant:
+        fraction = arr / safe_sub_total
+        ax_bottom.fill_between(
+            bin_centers,
+            cumulative,
+            cumulative + fraction,
+            step="mid",
+            color=color,
+            alpha=0.88,
+        )
+        cumulative += fraction
+
+    ax_bottom.set_xlabel("BDT score")
+    ax_bottom.set_ylabel("Non-WW frac.")
+    ax_bottom.set_ylim(0.0, 1.0)
+    ax_bottom.set_xlim(0.0, 1.0)
+    ax_bottom.set_yticks([0.0, 0.5, 1.0])
+    ax_bottom.grid(axis="y", alpha=0.22)
+    ax_bottom.text(
+        0.02,
+        0.92,
+        "Sub-dominant background composition",
+        transform=ax_bottom.transAxes,
+        fontsize=9,
+        va="top",
+    )
     fig.tight_layout()
     fig.savefig(plots_dir / "fit_templates.pdf", dpi=150)
     fig.savefig(plots_dir / "fit_templates.png", dpi=150)
@@ -529,7 +607,15 @@ def main():
 
     # Plots
     if not args.no_plots:
-        make_fit_plots(output_dir, scan_results, best_counting, sig_hist, bkg_hists, bins)
+        make_fit_plots(
+            output_dir,
+            scan_results,
+            best_counting,
+            sig_hist,
+            bkg_hists,
+            bins,
+            shape_rel_unc_pct=rel_unc * 100,
+        )
 
 
 if __name__ == "__main__":
