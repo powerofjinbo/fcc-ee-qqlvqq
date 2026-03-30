@@ -70,13 +70,19 @@ def step_supporting_figures() -> None:
     run_bash("python3 paper/generate_supporting_figures.py")
 
 
+def step_sync_paper_figures() -> None:
+    run_bash("python3 paper/sync_paper_figures.py")
+
+
 def step_plots() -> None:
     run_bash("python3 plots_lvqq.py", needs_setup=True)
     step_roc_plot()
     step_supporting_figures()
+    step_sync_paper_figures()
 
 
 def step_paper() -> None:
+    step_sync_paper_figures()
     run_bash('cd paper && tectonic main.tex')
 
 

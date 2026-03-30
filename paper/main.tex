@@ -63,7 +63,7 @@ Although the branching fraction is lower than the fully hadronic mode~\cite{Eyse
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=0.42\textwidth]{../ml/models/xgboost_bdt_v6/plots/feynman_diagram.pdf}
+  \includegraphics[width=0.42\textwidth]{figs/feynman_diagram.pdf}
   \caption{Representative signal diagram for Higgsstrahlung with $\mathrm{Z} \to q\bar{q}$ and $\mathrm{H}\to WW^* \to \ell\nu q\bar{q}'$. Fermions, gauge bosons, and the Higgs boson are drawn with distinct line styles.}
   \label{fig:feynman}
 \end{figure}
@@ -177,7 +177,7 @@ Recoil   & $4.1{\cdot}10^4$ & 13.1 & $1.36{\cdot}10^6$ & 0.8  & $5.4{\cdot}10^4$
 
 \begin{figure}[tb]
   \centering
-  \includegraphics[width=0.78\textwidth]{../ml/models/xgboost_bdt_v6/plots/pairing_validation.pdf}
+  \includegraphics[width=0.78\textwidth]{figs/pairing_validation.pdf}
   \caption{Reconstructed boson candidate masses after Z-priority pairing for signal (red) and $WW$ background (blue). Dashed lines mark the reference masses for the on-shell $Z$, leptonic $W$, and Higgs candidates; the off-shell $W^*$ distribution is shown without a fixed mass constraint.}
   \label{fig:pairing}
 \end{figure}
@@ -223,7 +223,7 @@ Rank & Feature & Description & [\%] \\
 
 \begin{figure}[tb]
   \centering
-  \includegraphics[width=0.50\textwidth]{../ml/models/xgboost_bdt_v6/plots/roc_curve.pdf}
+  \includegraphics[width=0.50\textwidth]{figs/roc_curve.pdf}
   \caption{ROC curve from 5-fold cross-validated scores using all selected events. Overall weighted AUC = 0.9728.}
   \label{fig:roc}
 \end{figure}
@@ -251,11 +251,11 @@ As a cross-check, an extended single-bin counting scan (Fig.~\ref{fig:fit}, righ
   \centering
   \begin{minipage}{0.48\textwidth}
     \centering
-    \includegraphics[width=\textwidth]{../ml/models/xgboost_bdt_v6/plots/fit_templates.pdf}
+    \includegraphics[width=\textwidth]{figs/fit_templates.pdf}
   \end{minipage}\hfill
   \begin{minipage}{0.50\textwidth}
     \centering
-    \includegraphics[width=\textwidth]{../ml/models/xgboost_bdt_v6/plots/bdt_cut_scan.pdf}
+    \includegraphics[width=\textwidth]{figs/bdt_cut_scan.pdf}
   \end{minipage}
   \caption{Left: BDT score templates (upper) together with the composition of the sub-dominant backgrounds across the BDT spectrum (lower); the signal template is overlaid as a black line scaled by a factor of 7, while the absolute rate is visibly dominated by $WW$. Right: expected $\delta\mu/\mu$ from the single-bin counting reference scan, shown for the practically relevant threshold region, with the 20-bin shape-fit precision indicated by the dashed line.}
   \label{fig:fit}
@@ -312,5 +312,15 @@ FCC Collaboration, \url{https://github.com/HEP-FCC/FCCAnalyses}.
 
 \end{thebibliography}
 \endgroup
+
+\clearpage
+\appendix
+\section{Supplementary Validation Plots}
+\label{app:validation-plots}
+
+This appendix collects the full set of validation plots produced by \texttt{plots\_lvqq.py}.
+They are grouped into absolute-yield distributions, unit-area signal-versus-background comparisons, signal-versus-diboson shape comparisons, and rendered cutflow summary tables.
+
+\input{appendix_plots.tex}
 
 \end{document}

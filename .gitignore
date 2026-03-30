@@ -13,5 +13,6 @@ paper/*.fls
 paper/*.pdf
 paper/*.xdv
 paper/cutflow_data.json
+paper/figs/
 
 *.log

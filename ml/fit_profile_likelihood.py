@@ -454,6 +454,90 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     fig.savefig(plots_dir / "fit_templates.png", dpi=150)
     plt.close(fig)
 
+    # 3. Rank-ordered BDT bins (highest score to lowest score)
+    rank_order = np.arange(len(sig_hist))[::-1]
+    rank_bins = np.arange(1, len(sig_hist) + 1)
+    sig_rank = sig_hist[rank_order]
+    bkg_rank_arrays = [arr[rank_order] for arr in bkg_arrays]
+    total_rank = np.sum(np.asarray(bkg_rank_arrays), axis=0)
+
+    fig, (ax_top, ax_bottom) = plt.subplots(
+        2,
+        1,
+        figsize=(7.4, 6.6),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.15], "hspace": 0.05},
+    )
+
+    cumulative = np.zeros_like(rank_bins, dtype=float)
+    for label, arr, color in zip(bkg_labels, bkg_rank_arrays, colors):
+        ax_top.bar(
+            rank_bins,
+            arr,
+            bottom=cumulative,
+            width=0.90,
+            color=color,
+            alpha=0.88,
+            label=f"Bkg: {label}",
+            linewidth=0.0,
+        )
+        cumulative += arr
+
+    sig_scale_rank = sig_scale
+    ax_top.step(
+        np.r_[rank_bins, rank_bins[-1] + 1] - 0.5,
+        np.r_[sig_rank * sig_scale_rank, sig_rank[-1] * sig_scale_rank],
+        where="post",
+        color="black",
+        linewidth=2.0,
+        label=f"Signal (x{sig_scale_rank})",
+    )
+    ax_top.set_ylabel("Events / rank bin")
+    ax_top.set_title("Rank-ordered BDT bins")
+    ax_top.set_yscale("log")
+    ax_top.set_ylim(bottom=0.1)
+    ax_top.grid(axis="y", alpha=0.22)
+    ax_top.legend(fontsize=8.6, ncol=2, frameon=False, loc="upper center")
+    ax_top.text(
+        0.03,
+        0.95,
+        r'$\mathbf{FCC\text{-}ee}$ Simulation',
+        transform=ax_top.transAxes,
+        fontsize=10,
+        va='top',
+        fontstyle='italic',
+    )
+    ax_top.text(
+        0.03,
+        0.89,
+        r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
+        transform=ax_top.transAxes,
+        fontsize=9,
+        va='top',
+    )
+
+    purity = np.divide(sig_rank, sig_rank + total_rank, out=np.zeros_like(sig_rank), where=(sig_rank + total_rank) > 0)
+    ax_bottom.plot(rank_bins, purity, color="#2C7FB8", marker="o", markersize=3.8, linewidth=1.8)
+    ax_bottom.set_ylabel(r"$S/(S+B)$")
+    ax_bottom.set_xlabel("BDT rank bin (1 = highest score)")
+    ax_bottom.set_ylim(0.0, min(1.0, max(0.15, purity.max() * 1.25 if len(purity) else 0.15)))
+    ax_bottom.set_xlim(0.5, len(rank_bins) + 0.5)
+    ax_bottom.set_xticks(rank_bins[::2] if len(rank_bins) > 10 else rank_bins)
+    ax_bottom.grid(axis="y", alpha=0.22)
+    ax_bottom.text(
+        0.02,
+        0.92,
+        "Signal purity by ranked bin",
+        transform=ax_bottom.transAxes,
+        fontsize=9,
+        va="top",
+    )
+
+    fig.tight_layout()
+    fig.savefig(plots_dir / "bdt_score_rank.pdf", dpi=150)
+    fig.savefig(plots_dir / "bdt_score_rank.png", dpi=150)
+    plt.close(fig)
+
     print(f"  Fit plots saved to {plots_dir}/")
 
 

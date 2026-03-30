@@ -823,16 +823,9 @@ def makeComparisonPlot(histname, xtitle, rebin, xmin, xmax):
 
     hists = []
     for fname, label, color in compare:
-        filepath = os.path.join(inputDir, fname + ".root")
-        if not os.path.exists(filepath):
+        h = getHist(fname, histname)
+        if h is None:
             continue
-        f = ROOT.TFile.Open(filepath)
-        h = f.Get(histname)
-        if not h:
-            f.Close()
-            continue
-        h.SetDirectory(0)
-        f.Close()
 
         if rebin > 1:
             h.Rebin(rebin)
