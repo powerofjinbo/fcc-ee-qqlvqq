@@ -17,11 +17,11 @@ This writes flat ntuples to:
 output/h_hww_lvqq/treemaker/ecm240/
 ```
 
-The default configuration uses a mixed background setup:
-- `WW`: `10%`
-- `ZZ`: `10%`
-- `tautau`: `10%`
-- `qq`: `5%`
+The default configuration uses full background statistics:
+- `WW`: `100%`
+- `ZZ`: `100%`
+- `tautau`: `100%`
+- `qq`: `100%`
 
 To force one common fraction for all reducible backgrounds, add for example
 `--background-fraction 0.1`.

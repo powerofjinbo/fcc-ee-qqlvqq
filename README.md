@@ -15,7 +15,7 @@ The code is organized as a single analysis workflow driven by `run_lvqq.py`.
 - `h_hww_lvqq.py`
   FCCAnalyses analysis module for both `histmaker` and `treemaker`.
 - `ml_config.py`
-  Shared configuration: samples, mixed background fractions, ML features.
+  Shared configuration: samples, default full-background fractions, ML features.
 - `utils.h`
   Channel-specific C++ helpers, including the 4-jet Z-priority pairing.
 - `functions/`
@@ -35,14 +35,14 @@ The code is organized as a single analysis workflow driven by `run_lvqq.py`.
 
 ## Default sample configuration
 
-The default mixed-statistics setup is:
+The default full-statistics setup is:
 
 - signal: `100%`
 - `ZH(other)`: `100%`
-- `WW`: `10%`
-- `ZZ`: `10%`
-- `tautau`: `10%`
-- `qq`: `5%`
+- `WW`: `100%`
+- `ZZ`: `100%`
+- `tautau`: `100%`
+- `qq`: `100%`
 
 ## Standard workflow
 

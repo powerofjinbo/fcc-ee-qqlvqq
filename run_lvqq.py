@@ -27,7 +27,7 @@ def parse_fraction(value: str) -> float:
 
 
 def default_background_fractions() -> dict[str, float]:
-    return {"ww": 0.10, "zz": 0.10, "qq": 0.05, "tautau": 0.10}
+    return {"ww": 1.0, "zz": 1.0, "qq": 1.0, "tautau": 1.0}
 
 
 def run_bash(command: str, *, needs_setup: bool = False, extra_env: dict[str, str] | None = None) -> None:

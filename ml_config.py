@@ -18,7 +18,7 @@ def _parse_fraction_value(raw_value: str, env_name: str) -> float:
 
 
 def _default_background_fractions() -> dict[str, float]:
-    return {"ww": 0.10, "zz": 0.10, "qq": 0.05, "tautau": 0.10}
+    return {"ww": 1.0, "zz": 1.0, "qq": 1.0, "tautau": 1.0}
 
 
 def _parse_background_fractions() -> dict[str, float]:
