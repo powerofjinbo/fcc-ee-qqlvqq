@@ -4,6 +4,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{hyperref}
 \usepackage{url}
 \usepackage{cite}
@@ -20,10 +21,12 @@
 \newcommand{\BR}{\ensuremath{\mathcal{B}}\xspace}
 \newcommand{\HWW}{\ensuremath{\mathrm{H} \to \mathrm{WW^*}}\xspace}
 \newcommand{\Zqq}{\ensuremath{\mathrm{Z} \to \mathrm{q\bar{q}}}\xspace}
+\newcommand{\sampletag}[1]{\path{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
 
 \begin{document}
 
-\title{Sensitivity to $\mathrm{H \to WW^*}$ in the $\mathrm{q\bar{q}\,\ell\nu\,q\bar{q}'}$ final state at FCC-ee}
+\title{Measurement of $\mathrm{H \to WW^*}$ in the $\mathrm{q\bar{q}\,\ell\nu\,q\bar{q}'}$ final state at FCC-ee}
 
 \author{
 Jinbo Zhang$^{1,*}$ and Jan Eysermans$^{2}$\\[6pt]
@@ -32,7 +35,7 @@ Jinbo Zhang$^{1,*}$ and Jan Eysermans$^{2}$\\[6pt]
 {\small $^*$Corresponding author: \texttt{jinboz1@uci.edu}}
 }
 
-\date{\today}
+\date{}
 \maketitle
 \vspace{-1em}
 \raggedbottom
@@ -41,7 +44,7 @@ Jinbo Zhang$^{1,*}$ and Jan Eysermans$^{2}$\\[6pt]
 \begin{abstract}
 We present a sensitivity study for $\sigma(\ee \to \mathrm{ZH}) \times \BR(\HWW)$ in the semi-leptonic final state $\mathrm{Z(q\bar{q})H(WW^* \to \ell\nu q\bar{q}')}$ at the FCC-ee at $\sqrts = 240\GeV$ with an integrated luminosity of $10.8~\fbinv$.
 A Z-priority jet pairing algorithm exploits the on-shell $Z$ boson to assign jets without constraining the off-shell $W^*$ mass.
-A boosted decision tree classifier achieves an AUC of $0.97$, and a profile likelihood fit to the BDT output discriminant yields an expected precision of $\delta\mu/\mu = 1.34\%$.
+A boosted decision tree classifier achieves an AUC of $0.97$, and a profile likelihood fit to the BDT output discriminant yields an expected precision of $\delta\mu/\mu = 0.88\%$.
 \end{abstract}
 
 
@@ -74,36 +77,40 @@ Although the branching fraction is lower than the fully hadronic mode~\cite{Eyse
 \label{sec:mc}
 
 The analysis uses Winter2023 samples with the IDEA detector model, simulated with Delphes~\cite{Delphes} within the FCCAnalyses~\cite{FCCAnalyses} framework.
-Signal samples are generated with Whizard~\cite{Whizard} interfaced with Pythia~\cite{Pythia}. Diboson backgrounds use Pythia8~\cite{Pythia}, while two-fermion and irreducible ZH backgrounds are produced with Whizard.
-Signal and irreducible ZH(other) samples are processed in full, while the large reducible backgrounds are processed with mixed fractions: 10\% for $WW$, 10\% for $ZZ$, 5\% for $q\bar{q}$, and 10\% for $\tau\tau$.
-Per-event weights $w = \mathcal{L} \times \sigma / (N_{\mathrm{gen}} \cdot f_{\mathrm{proc}})$, where $f_{\mathrm{proc}}$ is the processed fraction, normalise all samples to $\mathcal{L} = 10.8~\fbinv$ (four interaction points).
+Signal and irreducible ZH samples are generated with Whizard~\cite{Whizard} interfaced with Pythia~\cite{Pythia} for showering. Diboson backgrounds use Pythia8~\cite{Pythia}, and two-fermion backgrounds are produced with Whizard.
+Per-event weights $w = \mathcal{L} \times \sigma / N_{\mathrm{gen}}$ normalise all samples to $\mathcal{L} = 10.8~\fbinv$ (four interaction points).
 An overview of the samples is given in Table~\ref{tab:samples}.
 
 \begin{table}[tb]
 \centering
-\caption{Monte Carlo samples. The combined signal cross section is $0.029\pb$.}
+\caption{Monte Carlo samples used in the full-statistics analysis. The combined signal cross section is $0.029\pb$.}
 \label{tab:samples}
-\small
-\begin{tabular}{llrr}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.08}
+\begin{tabular}{L{0.21\textwidth} l r r L{0.36\textwidth}}
 \toprule
-Process & Generator & $\sigma$ [pb] & $N_{\mathrm{gen}}$ \\
+Process & Generator & $\sigma$ [pb] & $N_{\mathrm{gen}}$ & Sample tag(s) \\
 \midrule
-\multicolumn{4}{l}{\textit{Signal: $\ee \to \mathrm{ZH}$, $\HWW$}} \\
-$\mathrm{Z(q\bar{q})H(WW^*)}$, $\mathrm{Z} \to u\bar{u}/d\bar{d}$ & Whizard & 0.01140 & 1,100,000 \\
-$\mathrm{Z(b\bar{b})H(WW^*)}$ & Whizard & 0.00635 & 1,000,000 \\
-$\mathrm{Z(c\bar{c})H(WW^*)}$ & Whizard & 0.00499 & 1,200,000 \\
-$\mathrm{Z(s\bar{s})H(WW^*)}$ & Whizard & 0.00640 & 1,200,000 \\
+\multicolumn{5}{l}{\textit{Signal: $\ee \to \mathrm{ZH}$, $\HWW$}} \\
+$\mathrm{Z(q\bar{q})H(WW^*)}$, $\mathrm{Z} \to u\bar{u}/d\bar{d}$ & Whizard & 0.01140 & 1,100,000 & \sampletag{wzp6_ee_qqH_HWW_ecm240} \\
+$\mathrm{Z(b\bar{b})H(WW^*)}$ & Whizard & 0.00635 & 1,000,000 & \sampletag{wzp6_ee_bbH_HWW_ecm240} \\
+$\mathrm{Z(c\bar{c})H(WW^*)}$ & Whizard & 0.00499 & 1,200,000 & \sampletag{wzp6_ee_ccH_HWW_ecm240} \\
+$\mathrm{Z(s\bar{s})H(WW^*)}$ & Whizard & 0.00640 & 1,200,000 & \sampletag{wzp6_ee_ssH_HWW_ecm240} \\
 \midrule
-\multicolumn{4}{l}{\textit{Diboson backgrounds}} \\
-$\ee \to WW$ & Pythia8 & 16.44 & $3.7 \times 10^8$ \\
-$\ee \to ZZ$ & Pythia8 & 1.36 & $2.1 \times 10^8$ \\
+\multicolumn{5}{l}{\textit{Diboson backgrounds}} \\
+$\ee \to WW$ & Pythia8 & 16.44 & $3.7 \times 10^8$ & \sampletag{p8_ee_WW_ecm240} \\
+$\ee \to ZZ$ & Pythia8 & 1.36 & $2.1 \times 10^8$ & \sampletag{p8_ee_ZZ_ecm240} \\
 \midrule
-\multicolumn{4}{l}{\textit{Two-fermion backgrounds}} \\
-$\ee \to q\bar{q}$ ($u,d,c,s,b$) & Whizard & $\sim$55 & $\sim 5 \times 10^8$ \\
-$\ee \to \tau^+\tau^-$ & Whizard & 4.67 & $2.4 \times 10^8$ \\
+\multicolumn{5}{l}{\textit{Two-fermion backgrounds}} \\
+$\ee \to q\bar{q}$ ($u,d,c,s,b$) & Whizard & $\sim$55 & $\sim 5 \times 10^8$ & \sampletag{wz3p6_ee_uu_ecm240}, \sampletag{wz3p6_ee_dd_ecm240}, \sampletag{wz3p6_ee_cc_ecm240}, \sampletag{wz3p6_ee_ss_ecm240}, \sampletag{wz3p6_ee_bb_ecm240} \\
+$\ee \to \tau^+\tau^-$ & Whizard & 4.67 & $2.4 \times 10^8$ & \sampletag{wz3p6_ee_tautau_ecm240} \\
 \midrule
-\multicolumn{4}{l}{\textit{Irreducible ZH ($\mathrm{H} \to \mathrm{b\bar{b}, \tau\tau, gg, c\bar{c}, ZZ^*}$)}} \\
-$\mathrm{Z(had.)H(other)}$ & Whizard & $\sim$0.11 & $\sim 10^7$ \\
+\multicolumn{5}{l}{\textit{Irreducible ZH ($\mathrm{H} \to \mathrm{b\bar{b}, \tau\tau, gg, c\bar{c}, ZZ^*}$)}} \\
+$\mathrm{Z(q\bar{q})H(other)}$ & Whizard & 0.04171 & 2,500,000 & \sampletag{wzp6_ee_qqH_Hbb_ecm240}, \sampletag{wzp6_ee_qqH_Htautau_ecm240}, \sampletag{wzp6_ee_qqH_Hgg_ecm240}, \sampletag{wzp6_ee_qqH_Hcc_ecm240}, \sampletag{wzp6_ee_qqH_HZZ_ecm240} \\
+$\mathrm{Z(b\bar{b})H(other)}$ & Whizard & 0.02324 & 2,100,000 & \sampletag{wzp6_ee_bbH_Hbb_ecm240}, \sampletag{wzp6_ee_bbH_Htautau_ecm240}, \sampletag{wzp6_ee_bbH_Hgg_ecm240}, \sampletag{wzp6_ee_bbH_Hcc_ecm240}, \sampletag{wzp6_ee_bbH_HZZ_ecm240} \\
+$\mathrm{Z(c\bar{c})H(other)}$ & Whizard & 0.01825 & 2,600,000 & \sampletag{wzp6_ee_ccH_Hbb_ecm240}, \sampletag{wzp6_ee_ccH_Htautau_ecm240}, \sampletag{wzp6_ee_ccH_Hgg_ecm240}, \sampletag{wzp6_ee_ccH_Hcc_ecm240}, \sampletag{wzp6_ee_ccH_HZZ_ecm240} \\
+$\mathrm{Z(s\bar{s})H(other)}$ & Whizard & 0.02343 & 1,900,000 & \sampletag{wzp6_ee_ssH_Hbb_ecm240}, \sampletag{wzp6_ee_ssH_Htautau_ecm240}, \sampletag{wzp6_ee_ssH_Hgg_ecm240}, \sampletag{wzp6_ee_ssH_Hcc_ecm240}, \sampletag{wzp6_ee_ssH_HZZ_ecm240} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -127,7 +134,7 @@ This avoids constraining the off-shell $W^*$ mass, which peaks at $\sim$38\GeV r
 
 The cutflow is given in Table~\ref{tab:cutflow}.
 After all selections, $41{,}284$ signal events and $1.47 \times 10^6$ background events are retained ($S/B = 0.028$, $S/\sqrt{B} = 34.0$).
-The background composition is $WW$ 92.4\%, $ZZ$ 3.7\%, $\tau\tau$ 2.4\%, $q\bar{q}$ 0.9\%, ZH(other) 0.6\%.
+The background composition is $WW$ 92.3\%, $ZZ$ 3.7\%, $\tau\tau$ 2.4\%, $q\bar{q}$ 1.0\%, ZH(other) 0.6\%.
 The $Z$ and recoil mass windows (Cuts~6--7) provide the largest rejection, reducing the $WW$ yield by a factor of $\sim$20.
 
 The performance of the Z-priority pairing is validated in Fig.~\ref{fig:pairing}: the signal $Z$ candidate peaks at $90.1\GeV$ with $5.7\GeV$ resolution, the off-shell $W^*$ at $38.1\GeV$, the leptonic $W$ at $74.2\GeV$, and the Higgs candidate at $128.3\GeV$.
@@ -175,7 +182,7 @@ Recoil   & $4.1{\cdot}10^4$ & 13.1 & $1.36{\cdot}10^6$ & 0.8  & $5.4{\cdot}10^4$
 \end{tabular}
 \end{table}
 
-\begin{figure}[tb]
+\begin{figure}[t!]
   \centering
   \includegraphics[width=0.78\textwidth]{figs/pairing_validation.pdf}
   \caption{Reconstructed boson candidate masses after Z-priority pairing for signal (red) and $WW$ background (blue). Dashed lines mark the reference masses for the on-shell $Z$, leptonic $W$, and Higgs candidates; the off-shell $W^*$ distribution is shown without a fixed mass constraint.}
@@ -189,12 +196,12 @@ Recoil   & $4.1{\cdot}10^4$ & 13.1 & $1.36{\cdot}10^6$ & 0.8  & $5.4{\cdot}10^4$
 
 An XGBoost~\cite{XGBoost} BDT with 20 kinematic features is trained to separate signal from background.
 Events are weighted by physics weights with class-balanced normalisation.
-Hyperparameters (tree depth 5, learning rate 0.05, 1000 trees, subsampling 0.7) are determined by grid search.
+Hyperparameters (tree depth 4, learning rate 0.05, 1000 trees, subsampling 0.7) are determined by grid search.
 
-All $1{,}092{,}584$ selected events are scored using 5-fold stratified cross-validation, achieving an AUC of $0.9728$ (individual folds: $0.9725$--$0.9733$).
-A separate 70/30 development split gives train/test AUC values of 0.9761/0.9726, indicating stable classifier performance without a significant overtraining signature.
-The most discriminating feature is $d_{34}$ (42.6\% importance), the Durham jet merging distance from 4 to 3 jets, which probes the four-jet signal topology versus the two-jet $WW$ background.
-The feature ranking is given in Table~\ref{tab:features} and the 5-fold ROC curve in Fig.~\ref{fig:roc}.
+All $4{,}523{,}330$ selected events are scored using 5-fold stratified cross-validation, achieving an AUC of $0.9711$.
+A separate 70/30 development split gives train/test AUC values of 0.9719/0.9710, indicating stable classifier performance without significant overtraining.
+The most discriminating feature is $d_{34}$ (42.5\% importance), the Durham jet merging distance from 4 to 3 jets, which probes the four-jet signal topology versus the two-jet $WW$ background. For readability, the corresponding distribution is shown as $\sqrt{d_{34}}$ in Fig.~\ref{fig:ml}.
+The feature ranking is given in Table~\ref{tab:features}, while the overall classifier performance and the leading event-topology variable are shown in Fig.~\ref{fig:ml}.
 
 \begin{table}[tb]
 \centering
@@ -205,27 +212,34 @@ The feature ranking is given in Table~\ref{tab:features} and the 5-fold ROC curv
 \toprule
 Rank & Feature & Description & [\%] \\
 \midrule
-1 & $d_{34}$ & Durham distance ($4 \to 3$ jets) & 42.6 \\
-2 & $m_{\mathrm{jets}}$ & Total 4-jet invariant mass & 9.4 \\
-3 & $\Delta m_Z$ & $|m_{Z,\mathrm{cand}} - m_Z|$ & 6.2 \\
-4 & $d_{23}$ & Durham distance ($3 \to 2$ jets) & 5.4 \\
-5 & $m_{W^*}$ & Hadronic $W^*$ mass & 4.7 \\
-6 & $p_\ell$ & Lepton momentum & 4.3 \\
-7 & $m_{W,\mathrm{lep}}$ & Leptonic $W$ mass & 3.8 \\
-8 & $\Delta m_{H,\mathrm{recoil}}$ & $|m_{\mathrm{recoil}} - m_H|$ & 3.8 \\
-9 & $\alpha_{\ell,\mathrm{miss}}$ & Lepton--$\vec{p}_{\mathrm{miss}}$ angle & 3.5 \\
-10 & $m_{\mathrm{miss}}$ & Missing mass & 2.4 \\
+1 & $d_{34}$ & Durham distance ($4 \to 3$ jets) & 42.5 \\
+2 & $\Delta m_Z$ & $|m_{Z,\mathrm{cand}} - m_Z|$ & 8.0 \\
+3 & $m_{\mathrm{jets}}$ & Total 4-jet invariant mass & 7.9 \\
+4 & $\Delta m_{H,\mathrm{recoil}}$ & $|m_{\mathrm{recoil}} - m_H|$ & 5.6 \\
+5 & $p_\ell$ & Lepton momentum & 5.2 \\
+6 & $d_{23}$ & Durham distance ($3 \to 2$ jets) & 5.0 \\
+7 & $m_{W^*}$ & Hadronic $W^*$ mass & 4.5 \\
+8 & $\alpha_{\ell,\mathrm{miss}}$ & Lepton--$\vec{p}_{\mathrm{miss}}$ angle & 3.3 \\
+9 & $m_{W,\mathrm{lep}}$ & Leptonic $W$ mass & 3.1 \\
+10 & $m_{H,\mathrm{cand}}$ & Reconstructed Higgs mass & 2.3 \\
 \midrule
-\multicolumn{3}{l}{\textit{Remaining 10 features}} & 14.0 \\
+\multicolumn{3}{l}{\textit{Remaining 10 features}} & 12.5 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[tb]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.50\textwidth]{figs/roc_curve.pdf}
-  \caption{ROC curve from 5-fold cross-validated scores using all selected events. Overall weighted AUC = 0.9728.}
-  \label{fig:roc}
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figs/roc_curve.pdf}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\textwidth]{figs/d34_distribution.pdf}
+  \end{minipage}
+  \caption{Left: ROC curve from 5-fold cross-validated scores using all selected events, with an overall weighted AUC of 0.9711. Right: unit-area distributions of $\sqrt{d_{34}}$ for the merged signal and the main background categories. The signal populates substantially larger values, consistent with a genuine four-jet topology.}
+  \label{fig:ml}
 \end{figure}
 
 
@@ -241,13 +255,13 @@ A 1\% normalisation uncertainty is assigned to each background process.
 Bin-by-bin template statistical uncertainties are included.
 The fit is performed on the Asimov dataset, yielding:
 \begin{equation}
-  \boxed{\hat{\mu} = 1.000, \qquad \frac{\delta\mu}{\mu} = 1.34\%.}
+  \boxed{\hat{\mu} = 1.000, \qquad \frac{\delta\mu}{\mu} = 0.88\%.}
   \label{eq:result}
 \end{equation}
-For the current mixed-statistics production, the same fit without bin-by-bin template statistical nuisance parameters gives a physics-only floor of 0.78\%.
-As a cross-check, an extended single-bin counting scan (Fig.~\ref{fig:fit}, right) gives a best precision of $1.37\%$ at a BDT threshold of 0.98, confirming that the shape fit extracts additional information.
+For the current full-statistics production, the same fit without bin-by-bin template statistical nuisance parameters gives a physics-only floor of 0.79\%.
+As a cross-check, an extended single-bin counting scan (Fig.~\ref{fig:fit}, right) gives a best precision of $1.03\%$ at a BDT threshold of 0.97, confirming that the shape fit extracts additional information.
 
-\begin{figure}[tb]
+\begin{figure}[t!]
   \centering
   \begin{minipage}{0.48\textwidth}
     \centering
@@ -270,11 +284,21 @@ We have presented a sensitivity study for $\sigma_{\mathrm{ZH}} \times \BR(\HWW)
 The analysis employs a Z-priority jet pairing strategy designed for the off-shell $W^*$ topology, and an XGBoost BDT classifier scored via 5-fold cross-validation (AUC = 0.97).
 A profile likelihood fit to the 20-bin BDT output yields:
 \begin{equation}
-  \frac{\delta\mu}{\mu} = 1.34\%.
+  \frac{\delta\mu}{\mu} = 0.88\%.
 \end{equation}
 This demonstrates that the semi-leptonic channel provides a competitive and methodologically independent sensitivity to $\HWW$, complementary to the fully hadronic analysis.
 Further improvements include incorporating jet flavour tagging and extending to $\sqrts = 365\GeV$.
 
+
+\appendix
+\section{Supplementary Validation Plots}
+\label{app:validation-plots}
+
+This appendix collects a curated subset of validation plots produced by \texttt{plots\_lvqq.py}.
+
+\input{appendix_plots.tex}
+
+\clearpage
 
 % ========================================================================
 \begingroup
@@ -312,15 +336,5 @@ FCC Collaboration, \url{https://github.com/HEP-FCC/FCCAnalyses}.
 
 \end{thebibliography}
 \endgroup
-
-\clearpage
-\appendix
-\section{Supplementary Validation Plots}
-\label{app:validation-plots}
-
-This appendix collects the full set of validation plots produced by \texttt{plots\_lvqq.py}.
-They are grouped into absolute-yield distributions, unit-area signal-versus-background comparisons, signal-versus-diboson shape comparisons, and rendered cutflow summary tables.
-
-\input{appendix_plots.tex}
 
 \end{document}

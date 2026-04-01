@@ -16,141 +16,61 @@ FIGURE_STEMS = [
     "feynman_diagram",
     "pairing_validation",
     "roc_curve",
+    "d34_distribution",
     "fit_templates",
     "bdt_cut_scan",
-    "bdt_score_rank",
 ]
 
-STACKED_PLOTS = [
+APPENDIX_WIDE_PLOTS = [
     "cutFlow",
-    "lepton_p",
-    "lepton_iso",
-    "missingEnergy_e",
-    "missingEnergy_p",
-    "missingMass",
-    "cosTheta_miss",
-    "visibleEnergy",
-    "njets",
-    "jet0_p",
-    "jet1_p",
-    "jet2_p",
-    "jet3_p",
-    "Zcand_m",
-    "Wstar_m",
-    "Wlep_m",
-    "Hcand_m",
-    "Hcand_m_afterZ",
-    "Hcand_m_final",
-    "recoil_m",
-    "recoil_m_afterZ",
-    "deltaZ",
 ]
 
-NORMALIZED_PLOTS = [
-    "lepton_p_norm",
-    "lepton_iso_norm",
-    "missingEnergy_e_norm",
-    "missingEnergy_p_norm",
-    "missingMass_norm",
-    "cosTheta_miss_norm",
-    "visibleEnergy_norm",
-    "jet0_p_norm",
-    "jet1_p_norm",
-    "jet2_p_norm",
-    "jet3_p_norm",
-    "Zcand_m_norm",
-    "Wstar_m_norm",
-    "Wlep_m_norm",
-    "Hcand_m_norm",
-    "Hcand_m_afterZ_norm",
-    "Hcand_m_final_norm",
-    "recoil_m_norm",
-    "recoil_m_afterZ_norm",
-    "deltaZ_norm",
-]
-
-SHAPE_PLOTS = [
-    "Zcand_m_shape",
-    "Wstar_m_shape",
-    "Hcand_m_shape",
-    "recoil_m_shape",
+APPENDIX_PAIRED_PLOTS = [
     "deltaZ_shape",
-    "lepton_p_shape",
-    "lepton_iso_shape",
-    "missingEnergy_e_shape",
-    "missingEnergy_p_shape",
-    "missingMass_shape",
+    "Wstar_m_shape",
+    "recoil_m_afterZ_norm",
+    "Hcand_m_final_norm",
     "cosTheta_miss_shape",
     "visibleEnergy_shape",
-    "jet0_p_shape",
-    "jet1_p_shape",
-    "jet2_p_shape",
-    "jet3_p_shape",
 ]
 
-CUTFLOW_TABLE_PLOTS = [
-    "cutFlow_cutflow",
-    "cutFlow_efficiency",
-]
-
-APPENDIX_PLOT_STEMS = [
-    *STACKED_PLOTS,
-    *NORMALIZED_PLOTS,
-    *SHAPE_PLOTS,
-    *CUTFLOW_TABLE_PLOTS,
-]
+APPENDIX_PLOT_STEMS = [*APPENDIX_WIDE_PLOTS, *APPENDIX_PAIRED_PLOTS]
 
 PLOT_LABELS = {
     "cutFlow": "Stacked cutflow yields",
-    "lepton_p": "Lepton momentum",
-    "lepton_iso": "Lepton isolation",
-    "missingEnergy_e": "Missing energy",
-    "missingEnergy_p": "Missing momentum",
-    "missingMass": "Missing mass",
     "cosTheta_miss": r"$|\cos\theta_{\mathrm{miss}}|$",
     "visibleEnergy": "Visible energy excluding the selected lepton",
-    "njets": "Jet multiplicity",
-    "jet0_p": "Leading-jet momentum",
-    "jet1_p": "Second-jet momentum",
-    "jet2_p": "Third-jet momentum",
-    "jet3_p": "Fourth-jet momentum",
-    "Zcand_m": "Reconstructed Z-candidate mass",
     "Wstar_m": "Reconstructed hadronic W* candidate mass",
-    "Wlep_m": "Reconstructed leptonic W candidate mass",
-    "Hcand_m": "Reconstructed Higgs-candidate mass",
-    "Hcand_m_afterZ": "Reconstructed Higgs-candidate mass after the Z-mass cut",
     "Hcand_m_final": "Reconstructed Higgs-candidate mass after the final recoil cut",
-    "recoil_m": "Recoil mass",
     "recoil_m_afterZ": "Recoil mass after the Z-mass cut",
     "deltaZ": r"$|m_{jj}-m_Z|$ from the Z-priority pairing",
-    "cutFlow_cutflow": "Cutflow yield table",
-    "cutFlow_efficiency": "Cutflow efficiency table",
 }
 
 
 def caption_for_plot(stem: str) -> str:
-    if stem.endswith("_norm"):
-        base = stem[:-5]
-        return f"{PLOT_LABELS[base]}. Unit-area comparison of the merged signal and total background."
-    if stem.endswith("_shape"):
-        base = stem[:-6]
-        return f"{PLOT_LABELS[base]}. Unit-area shape comparison for the signal, WW, and ZZ templates."
-    if stem in {"cutFlow_cutflow", "cutFlow_efficiency"}:
-        if stem == "cutFlow_cutflow":
-            return "Rendered yield table normalized to 10.8 ab$^{-1}$ for the full event selection."
-        return "Rendered cumulative efficiency table for the sequential event selection."
     if stem == "cutFlow":
-        return "Stacked event yields across the sequential selection stages."
-    return f"{PLOT_LABELS[stem]}. Distribution normalized to the full integrated luminosity."
+        return "Stacked event yields across the sequential event selection."
+    if stem == "deltaZ_shape":
+        return r"Unit-area comparison of $|m_{jj}-m_Z|$, showing how the Z-priority pairing concentrates the signal near the on-shell Z mass."
+    if stem == "Wstar_m_shape":
+        return r"Unit-area comparison of the reconstructed $W^*$ mass, illustrating the broad off-shell signal structure relative to the diboson backgrounds."
+    if stem == "recoil_m_afterZ_norm":
+        return "Unit-area recoil-mass comparison after the Z-mass requirement, highlighting the Higgs recoil peak used in the final event selection."
+    if stem == "Hcand_m_final_norm":
+        return "Unit-area Higgs-candidate mass comparison after the final recoil selection."
+    if stem == "cosTheta_miss_shape":
+        return r"Signal-versus-diboson shape comparison of $|\cos\theta_{\mathrm{miss}}|$, which helps suppress forward missing-momentum topologies."
+    if stem == "visibleEnergy_shape":
+        return "Signal-versus-diboson comparison of the visible energy excluding the selected lepton, probing the semi-leptonic event balance."
+    raise KeyError(f"Unsupported appendix plot stem: {stem}")
 
 
 def write_appendix_tex(tex_path: Path) -> None:
-    wide_plots = {"cutFlow", "cutFlow_cutflow", "cutFlow_efficiency"}
     lines: list[str] = []
     lines.append("% Auto-generated by paper/sync_paper_figures.py")
     lines.append(r"\clearpage")
 
-    for stem in wide_plots:
+    for stem in APPENDIX_WIDE_PLOTS:
         lines.append(r"\begin{figure}[p]")
         lines.append(r"  \centering")
         lines.append(rf"  \includegraphics[width=0.92\textwidth]{{figs/plots_lvqq/{stem}.pdf}}")
@@ -159,7 +79,7 @@ def write_appendix_tex(tex_path: Path) -> None:
         lines.append(r"\end{figure}")
         lines.append("")
 
-    paired = [stem for stem in APPENDIX_PLOT_STEMS if stem not in wide_plots]
+    paired = list(APPENDIX_PAIRED_PLOTS)
     for idx in range(0, len(paired), 2):
         left = paired[idx]
         right = paired[idx + 1] if idx + 1 < len(paired) else None
@@ -168,14 +88,14 @@ def write_appendix_tex(tex_path: Path) -> None:
         lines.append(r"  \begin{minipage}[t]{0.48\textwidth}")
         lines.append(r"    \centering")
         lines.append(rf"    \includegraphics[width=\textwidth]{{figs/plots_lvqq/{left}.pdf}}")
-        lines.append(rf"    \par\smallskip{{\footnotesize \textbf{{{PLOT_LABELS.get(left.replace('_norm', '').replace('_shape', ''), left)}}}. {caption_for_plot(left)}}}")
+        lines.append(rf"    \par\smallskip{{\footnotesize {caption_for_plot(left)}}}")
         lines.append(r"  \end{minipage}")
         if right is not None:
             lines.append(r"  \hfill")
             lines.append(r"  \begin{minipage}[t]{0.48\textwidth}")
             lines.append(r"    \centering")
             lines.append(rf"    \includegraphics[width=\textwidth]{{figs/plots_lvqq/{right}.pdf}}")
-            lines.append(rf"    \par\smallskip{{\footnotesize \textbf{{{PLOT_LABELS.get(right.replace('_norm', '').replace('_shape', ''), right)}}}. {caption_for_plot(right)}}}")
+            lines.append(rf"    \par\smallskip{{\footnotesize {caption_for_plot(right)}}}")
             lines.append(r"  \end{minipage}")
         lines.append(r"\end{figure}")
         lines.append("")
@@ -187,6 +107,16 @@ def main() -> None:
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
     appendix_dir = TARGET_DIR / "plots_lvqq"
     appendix_dir.mkdir(parents=True, exist_ok=True)
+
+    wanted_root_files = {f"{stem}{ext}" for stem in FIGURE_STEMS for ext in (".pdf", ".png")}
+    for path in TARGET_DIR.iterdir():
+        if path.is_file() and path.name not in wanted_root_files:
+            path.unlink()
+
+    wanted_appendix_files = {f"{stem}.pdf" for stem in APPENDIX_PLOT_STEMS}
+    for path in appendix_dir.glob("*.pdf"):
+        if path.name not in wanted_appendix_files:
+            path.unlink()
 
     missing: list[str] = []
     for stem in FIGURE_STEMS:

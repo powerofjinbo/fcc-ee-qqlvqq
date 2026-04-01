@@ -45,7 +45,7 @@ processList = {
 
 inputDir = "/ceph/submit/data/group/fcc/ee/generation/DelphesEvents/winter2023/IDEA/"
 procDict = "/ceph/submit/data/group/fcc/ee/generation/DelphesEvents/winter2023/IDEA/samplesDict.json"
-includePaths = ["functions/functions.h", "functions/functions_gen.h", "utils.h"]
+includePaths = ["../functions/functions.h", "../functions/functions_gen.h", "utils.h"]
 
 if treemaker:
     outputDir = f"output/h_hww_lvqq/treemaker/ecm{ecm}/"

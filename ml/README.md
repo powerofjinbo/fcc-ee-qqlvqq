@@ -7,7 +7,7 @@ For the full end-to-end chain, see the top-level [README.md](../README.md) and
 ## 1. Produce ML ntuples
 
 ```bash
-cd /path/to/fcc-ee
+cd "/home/submit/jinboz1/work/Z(qq)WW(lvqq)"
 python3 run_lvqq.py treemaker
 ```
 
@@ -29,7 +29,7 @@ To force one common fraction for all reducible backgrounds, add for example
 ## 2. Train the XGBoost BDT
 
 ```bash
-cd /path/to/fcc-ee
+cd "/home/submit/jinboz1/work/Z(qq)WW(lvqq)"
 python3 run_lvqq.py train
 ```
 
@@ -49,7 +49,7 @@ Important outputs:
 ## 3. Apply the trained model to ntuples
 
 ```bash
-cd /path/to/fcc-ee
+cd "/home/submit/jinboz1/work/Z(qq)WW(lvqq)"
 python3 run_lvqq.py apply
 ```
 
@@ -64,7 +64,7 @@ A new branch called `bdt_score` is added.
 ## 4. Run the profile-likelihood fit
 
 ```bash
-cd /path/to/fcc-ee
+cd "/home/submit/jinboz1/work/Z(qq)WW(lvqq)"
 python3 run_lvqq.py fit
 ```
 

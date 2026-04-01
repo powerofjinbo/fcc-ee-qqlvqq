@@ -1,42 +1,86 @@
-# FCC-ee `Z(qq)WW(lvqq)` Analysis
+# `Z(qq)WW(lvqq)` Standard Analysis Flow
 
-This repository contains the FCC-ee semi-leptonic Higgs analysis
+This directory contains the standard FCC-ee semi-leptonic `H -> WW* -> lvqq`
+analysis workflow.
 
-- `e+e- -> ZH`
-- `Z -> q qbar`
-- `H -> WW* -> l nu q qbar'`
+## Standard entry points
 
-The code is organized as a single analysis workflow driven by `run_lvqq.py`.
-
-## Repository layout
+You only need to interact with one script in normal use:
 
 - `run_lvqq.py`
-  Unified driver for the workflow.
+  - Unified driver for the full workflow.
+  - Can run the whole chain or individual stages:
+    `all`, `stage1`, `ml`, `histmaker`, `treemaker`, `train`, `apply`,
+    `fit`, `plots`, `paper`.
+
 - `h_hww_lvqq.py`
-  FCCAnalyses analysis module for both `histmaker` and `treemaker`.
+  - Unified FCCAnalyses analysis module.
+  - `LVQQ_MODE=histmaker` writes histograms to
+    `output/h_hww_lvqq/histmaker/ecm240/`.
+  - `LVQQ_MODE=treemaker` writes flat ML ntuples to
+    `output/h_hww_lvqq/treemaker/ecm240/`.
+
 - `ml_config.py`
-  Shared configuration: samples, default full-background fractions, ML features.
-- `utils.h`
-  Channel-specific C++ helpers, including the 4-jet Z-priority pairing.
-- `functions/`
-  Common FCC helper headers required by the analysis module.
-- `ml/`
-  XGBoost training, score application, and `pyhf` fit code.
+  - Shared analysis configuration for the ML workflow.
+  - Defines the feature list, signal/background sample lists, and default
+    output locations.
+  - The default background setup is full statistics for all signal and
+    background samples.
+  - A global `LVQQ_BACKGROUND_FRACTION` override is still available, and the
+    per-group overrides `LVQQ_WW_FRACTION`, `LVQQ_ZZ_FRACTION`,
+    `LVQQ_QQ_FRACTION`, and `LVQQ_TAUTAU_FRACTION` can be used when needed.
+
 - `plots_lvqq.py`
-  Cutflow and kinematic plotting.
-  The `plots` workflow step also refreshes the paper ROC figure
-  `roc_curve.*` together with the support figures `pairing_validation.*`
-  and `feynman_diagram.*`.
-- `paper/`
-  Note source and helper script for support figures.
+  - Reads the histmaker ROOT files and produces cutflow tables plus the
+    paper-style kinematic plots in `plots_lvqq/`.
+  - The `plots` workflow step also refreshes the paper ROC figure
+    `roc_curve.*` together with the support figures `pairing_validation.*`
+    and `feynman_diagram.*`.
+
+- `ml/train_xgboost_bdt.py`
+  - Trains the XGBoost BDT from the treemaker ntuples.
+  - Produces the trained model, diagnostics, and `kfold_scores.csv`.
+
+- `ml/apply_xgboost_bdt.py`
+  - Applies the trained BDT to the treemaker ntuples.
+  - Writes scored ROOT files with a `bdt_score` branch to
+    `output/h_hww_lvqq/bdt_scored/ecm240/`.
+
+- `ml/fit_profile_likelihood.py`
+  - Builds the binned signal/background templates from the BDT scores and
+    runs the `pyhf` profile-likelihood fit.
+  - Produces `fit_results.json` and the fit plots under
+    `ml/models/xgboost_bdt_v6/plots/`.
+
+- `paper/main.tex`
+  - The note/paper source.
+  - Uses the plots and numbers produced by the workflow.
+
+## Optional utility
+
 - `ml/regenerate_roc.py`
-  Regenerates the paper ROC figure from the saved 5-fold scores and can also
-  produce a separate train/test diagnostic ROC.
+  - Convenience script to remake the ROC plot from saved outputs.
+  - Not required for the standard end-to-end workflow.
 
-## Default sample configuration
+## Standard run order
 
-The default full-statistics setup is:
+1. `python3 run_lvqq.py histmaker`
+2. `python3 run_lvqq.py treemaker`
+3. `python3 run_lvqq.py train`
+4. `python3 run_lvqq.py apply`
+5. `python3 run_lvqq.py fit`
+6. `python3 run_lvqq.py plots`
+7. `python3 run_lvqq.py paper`
 
+## One-command run
+
+From this directory:
+
+```bash
+python3 run_lvqq.py all
+```
+
+The default background configuration corresponds to:
 - signal: `100%`
 - `ZH(other)`: `100%`
 - `WW`: `100%`
@@ -44,40 +88,34 @@ The default full-statistics setup is:
 - `tautau`: `100%`
 - `qq`: `100%`
 
-## Standard workflow
+To override all reducible backgrounds with one common fraction:
 
 ```bash
-python3 run_lvqq.py histmaker
-python3 run_lvqq.py treemaker
-python3 run_lvqq.py train
-python3 run_lvqq.py apply
-python3 run_lvqq.py fit
-python3 run_lvqq.py plots
-python3 run_lvqq.py paper
+python3 run_lvqq.py all --background-fraction 0.1
 ```
 
-or in one shot:
+To override only one background class:
 
 ```bash
-python3 run_lvqq.py all
+python3 run_lvqq.py all --ww-fraction 0.5 --zz-fraction 0.3 --qq-fraction 0.1 --tautau-fraction 0.1
 ```
 
-## Environment assumptions
+Useful shorter variants:
 
-This analysis is currently configured for the FCC-ee subMIT environment:
-
-- Delphes samples from `/ceph/submit/.../winter2023/IDEA/`
-- FCCAnalyses setup script from `FCCANALYSES_SETUP_SH`
-
-If `FCCANALYSES_SETUP_SH` is not set, `run_lvqq.py` falls back to:
-
-```text
-/home/submit/jinboz1/tutorials/FCCAnalyses/setup.sh
+```bash
+python3 run_lvqq.py stage1   # histmaker + treemaker
+python3 run_lvqq.py ml       # train + apply + fit
 ```
 
-## Notes
+## Batch running on subMIT
 
-- Generated outputs such as `output/`, `plots_lvqq/`, `logs/`, and `ml/models/`
-  are intentionally excluded from version control.
-- The paper depends on plots produced by the workflow; run the pipeline before
-  compiling `paper/main.tex`.
+For long full-stat runs, use Slurm instead of keeping the job on the login node:
+
+```bash
+python3 run_lvqq.py all --slurm
+```
+
+This submits the same workflow to the `submit` partition and writes logs under
+`logs/slurm/`. A quick batch-node probe confirms the Slurm workers can see both
+`/ceph/submit/...` and your local FCCAnalyses setup area, so the standard
+workflow paths are valid there.

@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
-SETUP_SH = Path(os.environ.get("FCCANALYSES_SETUP_SH", "/home/submit/jinboz1/tutorials/FCCAnalyses/setup.sh"))
+SETUP_SH = Path("/home/submit/jinboz1/tutorials/FCCAnalyses/setup.sh")
 MODEL_DIR = "ml/models/xgboost_bdt_v6"
 
 
@@ -82,6 +82,8 @@ def step_plots() -> None:
 
 
 def step_paper() -> None:
+    step_roc_plot()
+    step_supporting_figures()
     step_sync_paper_figures()
     run_bash('cd paper && tectonic main.tex')
 

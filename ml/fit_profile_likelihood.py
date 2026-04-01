@@ -305,6 +305,7 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import LogLocator, NullFormatter
 
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -360,7 +361,7 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
         1,
         figsize=(7.5, 6.8),
         sharex=True,
-        gridspec_kw={"height_ratios": [3.1, 1.25], "hspace": 0.05},
+        gridspec_kw={"height_ratios": [2.5, 1.8], "hspace": 0.05},
     )
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
     bin_width = bins[1] - bins[0]
@@ -411,42 +412,42 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
                 transform=ax_top.transAxes, fontsize=9, va='top')
     ax_top.set_yscale("log")
     ax_top.set_ylim(bottom=0.1)
-    ax_top.grid(axis="y", alpha=0.22)
+    ax_top.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
+    ax_top.yaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10), numticks=120))
+    ax_top.yaxis.set_minor_formatter(NullFormatter())
+    ax_top.grid(axis="y", which="major", alpha=0.24, linewidth=0.8)
+    ax_top.grid(axis="y", which="minor", alpha=0.14, linewidth=0.55)
+    ax_top.tick_params(axis="y", which="major", labelsize=9)
+    ax_top.tick_params(axis="y", which="minor", length=2.5)
 
-    # Sub-dominant background composition panel (excluding WW, which dominates
-    # the absolute rate and would otherwise hide the smaller components).
+    # Sub-dominant background yields panel (excluding WW)
     subdominant = [
         (label, arr, color)
         for label, arr, color in zip(bkg_labels, bkg_arrays, colors)
         if label != "WW"
     ]
-    sub_total = np.sum(np.asarray([arr for _, arr, _ in subdominant]), axis=0)
-    safe_sub_total = np.where(sub_total > 0.0, sub_total, 1.0)
-    cumulative = np.zeros_like(sub_total, dtype=float)
-    for label, arr, color in subdominant:
-        fraction = arr / safe_sub_total
-        ax_bottom.fill_between(
-            bin_centers,
-            cumulative,
-            cumulative + fraction,
-            step="mid",
-            color=color,
-            alpha=0.88,
-        )
-        cumulative += fraction
-
+    ax_bottom.hist(
+        [bin_centers] * len(subdominant),
+        bins=bins,
+        weights=[arr for _, arr, _ in subdominant],
+        stacked=True,
+        label=[l for l, _, _ in subdominant],
+        color=[c for _, _, c in subdominant],
+        alpha=0.88,
+    )
     ax_bottom.set_xlabel("BDT score")
-    ax_bottom.set_ylabel("Non-WW frac.")
-    ax_bottom.set_ylim(0.0, 1.0)
+    ax_bottom.set_ylabel(f"Events / {bin_width:.2f}")
     ax_bottom.set_xlim(0.0, 1.0)
-    ax_bottom.set_yticks([0.0, 0.5, 1.0])
-    ax_bottom.grid(axis="y", alpha=0.22)
+    ax_bottom.set_yscale("log")
+    ax_bottom.set_ylim(bottom=0.1)
+    ax_bottom.legend(fontsize=7, ncol=2, frameon=False, loc="upper right")
+    ax_bottom.grid(axis="y", which="major", alpha=0.24)
     ax_bottom.text(
         0.02,
-        0.92,
-        "Sub-dominant background composition",
+        0.95,
+        "Sub-dominant backgrounds (excl. WW)",
         transform=ax_bottom.transAxes,
-        fontsize=9,
+        fontsize=8,
         va="top",
     )
     fig.tight_layout()
@@ -496,7 +497,13 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     ax_top.set_title("Rank-ordered BDT bins")
     ax_top.set_yscale("log")
     ax_top.set_ylim(bottom=0.1)
-    ax_top.grid(axis="y", alpha=0.22)
+    ax_top.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
+    ax_top.yaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10), numticks=120))
+    ax_top.yaxis.set_minor_formatter(NullFormatter())
+    ax_top.grid(axis="y", which="major", alpha=0.24, linewidth=0.8)
+    ax_top.grid(axis="y", which="minor", alpha=0.14, linewidth=0.55)
+    ax_top.tick_params(axis="y", which="major", labelsize=9)
+    ax_top.tick_params(axis="y", which="minor", length=2.5)
     ax_top.legend(fontsize=8.6, ncol=2, frameon=False, loc="upper center")
     ax_top.text(
         0.03,
