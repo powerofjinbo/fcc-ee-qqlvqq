@@ -24,11 +24,12 @@ You only need to interact with one script in normal use:
   - Shared analysis configuration for the ML workflow.
   - Defines the feature list, signal/background sample lists, and default
     output locations.
-  - The default background setup keeps signal and `ZH(other)` at full
-    statistics, while the large reducible backgrounds use a light 1% fraction.
-  - A global `LVQQ_BACKGROUND_FRACTION` override is still available, and the
-    per-group overrides `LVQQ_WW_FRACTION`, `LVQQ_ZZ_FRACTION`,
-    `LVQQ_QQ_FRACTION`, and `LVQQ_TAUTAU_FRACTION` can be used when needed.
+  - The default background setup keeps signal, `ZH(other)`, and the large
+    reducible backgrounds all at full statistics.
+  - A global `LVQQ_BACKGROUND_FRACTION` override is still available for quick
+    reduced-stat runs, and the per-group overrides `LVQQ_WW_FRACTION`,
+    `LVQQ_ZZ_FRACTION`, `LVQQ_QQ_FRACTION`, and `LVQQ_TAUTAU_FRACTION` can be
+    used when needed.
 
 - `plots_lvqq.py`
   - Reads the histmaker ROOT files and produces cutflow tables plus the
@@ -83,10 +84,10 @@ python3 run_lvqq.py all
 The default background configuration corresponds to:
 - signal: `100%`
 - `ZH(other)`: `100%`
-- `WW`: `1%`
-- `ZZ`: `1%`
-- `tautau`: `1%`
-- `qq`: `1%`
+- `WW`: `100%`
+- `ZZ`: `100%`
+- `tautau`: `100%`
+- `qq`: `100%`
 
 To override all reducible backgrounds with one common fraction:
 
