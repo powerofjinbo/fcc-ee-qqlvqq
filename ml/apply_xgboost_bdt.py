@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Apply a trained XGBoost BDT to lvqq treemaker ntuples and write scored ROOT files."""
+"""Apply a trained XGBoost BDT to lvqq treemaker ntuples and write scored ROOT files.
+
+This is a scored-ntuple export step. The default statistical fit in
+`fit_profile_likelihood.py` still reads `kfold_scores.csv` / `test_scores.csv`
+from training outputs rather than these ROOT files.
+"""
 
 import argparse
 import json

@@ -8,8 +8,8 @@ Methodology follows Jan Eysermans et al. (DOI: 10.17181/9v8ey-n6k50):
 - Uses pyhf for the statistical model
 
 Inputs:
-  - BDT test_scores.csv (from train_xgboost_bdt.py)
-  - Or: scored ROOT ntuples from treemaker
+  - BDT kfold_scores.csv (preferred, from train_xgboost_bdt.py)
+  - Or: test_scores.csv (fallback, with 1/test_frac weight rescaling)
 
 Outputs:
   - Expected mu_hat, sigma(mu) from Asimov dataset
@@ -551,7 +551,7 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
 def main():
     parser = argparse.ArgumentParser(description="Profile likelihood fit for H->WW* measurement")
     parser.add_argument("--scores", type=str, default=None,
-                       help="Path to test_scores.csv from BDT training")
+                       help="Path to kfold_scores.csv or test_scores.csv from BDT training")
     parser.add_argument("--model-dir", type=str, default=None,
                        help="Model directory (default: ml/models/xgboost_bdt)")
     parser.add_argument("--nbins", type=int, default=20,
