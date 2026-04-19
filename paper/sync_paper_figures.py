@@ -13,6 +13,7 @@ SOURCE_DIR = ANALYSIS_DIR / "ml" / "models" / "xgboost_bdt_v6" / "plots"
 TARGET_DIR = THIS_DIR / "figs"
 
 FIGURE_STEMS = [
+    "analysis_workflow",
     "feynman_diagram",
     "pairing_validation",
     "roc_curve",
