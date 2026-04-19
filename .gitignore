@@ -4,8 +4,10 @@ __pycache__/
 output/
 plots_lvqq/
 logs/
+tmp/
 
 ml/models/
+docs/learning_order_slides/build/node_modules/
 
 paper/*.aux
 paper/*.fdb_latexmk

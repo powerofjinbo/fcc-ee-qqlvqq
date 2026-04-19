@@ -56,6 +56,51 @@ You only need to interact with one script in normal use:
   - The note/paper source.
   - Uses the plots and numbers produced by the workflow.
 
+## Repository layout
+
+The repository is easier to understand if you group it into four layers:
+
+- Top level orchestration and event selection
+  - `run_lvqq.py`: the only normal user entry point.
+  - `h_hww_lvqq.py`: the FCCAnalyses event-selection graph.
+  - `ml_config.py`: shared sample lists, feature lists, and default paths.
+  - `plots_lvqq.py`: cutflow tables and paper-style kinematic plots from the
+    histogram outputs.
+
+- `ml/`
+  - The classifier and statistical-inference layer.
+  - Training, model application, ROC reproduction, and the profile-likelihood
+    fit live here.
+
+- `functions/`
+  - C++ helper headers loaded by the FCCAnalyses graph.
+  - These are low-level physics/helper routines used inside
+    `df.Define(...)` and `df.Filter(...)`.
+  - See [`functions/README.md`](functions/README.md).
+
+- `paper/`
+  - The presentation/publication layer.
+  - This directory turns finished plots and fit outputs into the final note.
+  - See [`paper/README.md`](paper/README.md).
+
+There is also one important root-level helper file:
+
+- `utils.h`
+  - lvqq-specific C++ utilities such as jet pairing and event-shape helpers.
+  - It is loaded together with the headers in `functions/` by
+    `h_hww_lvqq.py`.
+
+Generated outputs are intentionally kept out of git:
+
+- `output/`: FCCAnalyses histmaker/treemaker/scored ROOT outputs
+- `plots_lvqq/`: rendered cutflow and validation plots
+- `ml/models/`: trained-model artifacts and fit outputs
+- `logs/`, `tmp/`: local runtime artifacts
+
+If your local checkout also contains study material such as `learning_notes/`
+or presentation material such as `deliverables/`, those are not part of the
+core analysis pipeline.
+
 ## Optional utility
 
 - `ml/regenerate_roc.py`
