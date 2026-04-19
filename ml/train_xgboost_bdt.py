@@ -441,9 +441,10 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
     fig.savefig(plot_dir / 'sig_eff_vs_bkg_rej.pdf', bbox_inches='tight')
     plt.close()
 
-    # 3. BDT score distributions (overtraining check) - weighted
+    # 3. Weighted BDT score distributions for train/test comparison
     fig, ax = plt.subplots(figsize=(8, 6))
-    bins = np.linspace(0, 1, 51)
+    # Match the final profile-likelihood fit binning for easier comparison.
+    bins = np.linspace(0, 1, 21)
     # Train - weighted
     ax.hist(train_score[y_train == 1], bins=bins, weights=w_train[y_train == 1],
             density=True, alpha=0.5,
@@ -463,7 +464,7 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
                label='Background (test)', zorder=5)
     ax.set_xlabel('BDT Score')
     ax.set_ylabel('Normalised (weighted)')
-    ax.set_title('BDT Score Distribution (Overtraining Check)')
+    ax.set_title('BDT Score Distributions')
     ax.legend(fontsize=9)
     add_fcc_label(ax, x=0.35, y=0.97)
     fig.savefig(plot_dir / 'overtraining_check.png', dpi=150, bbox_inches='tight')
