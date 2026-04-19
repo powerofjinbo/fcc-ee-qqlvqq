@@ -24,8 +24,8 @@ You only need to interact with one script in normal use:
   - Shared analysis configuration for the ML workflow.
   - Defines the feature list, signal/background sample lists, and default
     output locations.
-  - The default background setup is full statistics for all signal and
-    background samples.
+  - The default background setup keeps signal and `ZH(other)` at full
+    statistics, while the large reducible backgrounds use a light 1% fraction.
   - A global `LVQQ_BACKGROUND_FRACTION` override is still available, and the
     per-group overrides `LVQQ_WW_FRACTION`, `LVQQ_ZZ_FRACTION`,
     `LVQQ_QQ_FRACTION`, and `LVQQ_TAUTAU_FRACTION` can be used when needed.
@@ -83,10 +83,10 @@ python3 run_lvqq.py all
 The default background configuration corresponds to:
 - signal: `100%`
 - `ZH(other)`: `100%`
-- `WW`: `100%`
-- `ZZ`: `100%`
-- `tautau`: `100%`
-- `qq`: `100%`
+- `WW`: `1%`
+- `ZZ`: `1%`
+- `tautau`: `1%`
+- `qq`: `1%`
 
 To override all reducible backgrounds with one common fraction:
 
