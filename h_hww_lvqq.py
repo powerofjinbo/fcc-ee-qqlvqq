@@ -67,6 +67,7 @@ doScale = True
 intLumi = 10.8e6 if ecm == 240 else 3e6
 
 bins_count = (50, 0, 50)
+bins_nlep = (10, -0.5, 9.5)
 bins_p = (200, 0, 200)
 bins_m = (400, 0, 400)
 bins_met = (200, 0, 200)
@@ -99,6 +100,7 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("electrons_p20", "FCCAnalyses::ReconstructedParticle::sel_p(20)(electrons_all)")
     df = df.Define("leptons_p20", "FCCAnalyses::ReconstructedParticle::merge(muons_p20, electrons_p20)")
     df = df.Define("n_leptons_p20", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p20)")
+    hists.append(df.Histo1D(("n_leptons_p20", "", *bins_nlep), "n_leptons_p20"))
     df = df.Filter("n_leptons_p20 == 1")
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut1"))
 
@@ -117,6 +119,7 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("electrons_p5", "FCCAnalyses::ReconstructedParticle::sel_p(5)(electrons_all)")
     df = df.Define("leptons_p5", "FCCAnalyses::ReconstructedParticle::merge(muons_p5, electrons_p5)")
     df = df.Define("n_leptons_p5", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p5)")
+    hists.append(df.Histo1D(("n_leptons_p5", "", *bins_nlep), "n_leptons_p5"))
     df = df.Filter("n_leptons_p5 == 1")
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut3"))
 
