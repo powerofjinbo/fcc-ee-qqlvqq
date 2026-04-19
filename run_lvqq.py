@@ -59,6 +59,8 @@ def step_apply() -> None:
 
 
 def step_fit() -> None:
+    # Fit consumes CSV score artifacts from training (`kfold_scores.csv` / `test_scores.csv`),
+    # so it does not need the scored ROOT ntuples written by `step_apply`.
     run_bash(f"python3 ml/fit_profile_likelihood.py --model-dir {MODEL_DIR}")
 
 
@@ -224,13 +226,13 @@ def main() -> None:
         "plots": [("plots", step_plots)],
         "paper": [("paper", step_paper)],
         "stage1": [("histmaker", step_histmaker), ("treemaker", step_treemaker)],
-        "ml": [("train", step_train), ("apply", step_apply), ("fit", step_fit)],
+        "ml": [("train", step_train), ("fit", step_fit), ("apply", step_apply)],
         "all": [
             ("histmaker", step_histmaker),
             ("treemaker", step_treemaker),
             ("train", step_train),
-            ("apply", step_apply),
             ("fit", step_fit),
+            ("apply", step_apply),
             ("plots", step_plots),
             ("paper", step_paper),
         ],
