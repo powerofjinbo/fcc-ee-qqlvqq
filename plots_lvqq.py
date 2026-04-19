@@ -7,6 +7,7 @@ Produces paper-style plots with stacked backgrounds and signal overlay
 import ROOT
 import os
 import sys
+import math
 
 from ml_config import SIGNAL_SAMPLES, ZH_OTHER_SAMPLES
 
@@ -57,8 +58,10 @@ processes = [
 # Histograms to plot: (name, xtitle, rebin, xmin, xmax, logy)
 histograms = [
     ("cutFlow", "Cut stage", 1, -0.5, 8.5, True),
+    ("n_leptons_p20", "Number of leptons with p > 20 GeV", 1, -0.5, 5.5, True),
     ("lepton_p", "Lepton momentum [GeV]", 4, 0, 150, False),
     ("lepton_iso", "Lepton isolation", 2, 0, 1, False),
+    ("n_leptons_p5", "Number of leptons with p > 5 GeV", 1, -0.5, 5.5, True),
     ("missingEnergy_e", "Missing energy [GeV]", 4, 0, 150, False),
     ("missingEnergy_p", "Missing momentum [GeV]", 4, 0, 150, False),
     ("missingMass", "Missing mass [GeV]", 4, 0, 240, False),
@@ -78,6 +81,97 @@ histograms = [
     ("recoil_m", "Recoil mass [GeV]", 4, 50, 200, False),
     ("recoil_m_afterZ", "Recoil mass (after Z cut) [GeV]", 4, 50, 200, False),
     ("deltaZ", "|m_{jj} - m_{Z}| [GeV]", 4, 0, 50, False),
+]
+
+CUT_DIAGNOSTICS = [
+    {
+        "name": "cut1_exactly_one_lepton",
+        "hist": "n_leptons_p20",
+        "xtitle": "Number of leptons with p > 20 GeV",
+        "rebin": 1,
+        "xmin": -0.5,
+        "xmax": 5.5,
+        "logy": True,
+        "kind": "eq_bin",
+        "value": 1,
+        "label": "Cut 1: exactly one lepton with p > 20 GeV",
+    },
+    {
+        "name": "cut2_lepton_isolation",
+        "hist": "lepton_iso",
+        "xtitle": "Lepton isolation",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 1.0,
+        "logy": False,
+        "kind": "lt",
+        "value": 0.15,
+        "label": "Cut 2: require lepton isolation < 0.15",
+    },
+    {
+        "name": "cut3_extra_lepton_veto",
+        "hist": "n_leptons_p5",
+        "xtitle": "Number of leptons with p > 5 GeV",
+        "rebin": 1,
+        "xmin": -0.5,
+        "xmax": 5.5,
+        "logy": True,
+        "kind": "eq_bin",
+        "value": 1,
+        "label": "Cut 3: veto extra leptons above 5 GeV",
+    },
+    {
+        "name": "cut4_missing_energy",
+        "hist": "missingEnergy_e",
+        "xtitle": "Missing energy [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 150.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 20.0,
+        "label": "Cut 4: require E_{miss} > 20 GeV",
+    },
+    {
+        "name": "cut5_exactly_four_jets",
+        "hist": "njets",
+        "xtitle": "Number of jets",
+        "rebin": 1,
+        "xmin": 0.0,
+        "xmax": 8.0,
+        "logy": True,
+        "kind": "eq_bin",
+        "value": 4,
+        "label": "Cut 5: require exactly 4 Durham jets",
+        "legend": (0.66, 0.62, 0.92, 0.88),
+        "legend_text_size": 0.026,
+    },
+    {
+        "name": "cut6_z_mass_window",
+        "hist": "Zcand_m",
+        "xtitle": "m_{Z cand} [GeV]",
+        "rebin": 4,
+        "xmin": 40.0,
+        "xmax": 150.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 91.19 - 15.0,
+        "hi": 91.19 + 15.0,
+        "label": "Cut 6: require |m_{Z,cand} - 91.2| < 15 GeV",
+    },
+    {
+        "name": "cut7_recoil_window",
+        "hist": "recoil_m_afterZ",
+        "xtitle": "Recoil mass (after Z cut) [GeV]",
+        "rebin": 4,
+        "xmin": 50.0,
+        "xmax": 200.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 125.0 - 20.0,
+        "hi": 125.0 + 20.0,
+        "label": "Cut 7: require |m_{recoil} - 125| < 20 GeV",
+    },
 ]
 
 CUT_LABELS = [
@@ -158,6 +252,173 @@ def getHist(filename, histname):
     # normalized to xsec * intLumi. Do NOT scale again here!
 
     return h
+
+
+def _nice_scale_factor(raw_scale):
+    """Round a signal scale factor to a readable 1/2/5 x 10^n value."""
+    if raw_scale <= 1:
+        return 1
+    exponent = math.floor(math.log10(raw_scale))
+    base = 10 ** exponent
+    for multiplier in (1, 2, 5, 10):
+        candidate = multiplier * base
+        if raw_scale <= candidate:
+            return int(candidate)
+    return int(10 * base)
+
+
+def _draw_cut_guides(config, ymin, ymax):
+    """Draw cut threshold/window guides on the active pad."""
+    line_color = ROOT.kGray + 2
+    lines = []
+    labels = []
+
+    def _make_line(x):
+        line = ROOT.TLine(x, ymin, x, ymax)
+        line.SetLineColor(line_color)
+        line.SetLineStyle(7)
+        line.SetLineWidth(3)
+        line.Draw()
+        lines.append(line)
+
+    kind = config["kind"]
+    if kind == "lt":
+        _make_line(config["value"])
+    elif kind == "gt":
+        _make_line(config["value"])
+    elif kind == "window":
+        _make_line(config["lo"])
+        _make_line(config["hi"])
+    elif kind == "eq_bin":
+        center = config["value"]
+        _make_line(center - 0.5)
+        _make_line(center + 0.5)
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.030)
+    latex.SetTextColor(line_color)
+    latex.DrawLatex(0.15, 0.82, config["label"])
+    labels.append(latex)
+    return lines, labels
+
+
+def makeCutDiagnosticPlot(config):
+    """Create one plot per analysis cut with the corresponding cut guide."""
+
+    histname = config["hist"]
+    xtitle = config["xtitle"]
+    rebin = config["rebin"]
+    xmin = config["xmin"]
+    xmax = config["xmax"]
+    logy = config["logy"]
+
+    c = ROOT.TCanvas(f"c_{config['name']}", "", 850, 700)
+    c.cd()
+    if logy:
+        c.SetLogy()
+
+    bkg_hists = []
+    sig_hists = []
+    for fname, label, color, isSignal in processes:
+        h = getHist(fname, histname)
+        if h is None:
+            continue
+
+        if rebin > 1:
+            h.Rebin(rebin)
+
+        h.SetLineColor(color)
+        h.SetLineWidth(2)
+        if isSignal:
+            h.SetFillStyle(0)
+            sig_hists.append((h, label, color))
+        else:
+            h.SetFillColor(color)
+            h.SetFillStyle(1001)
+            bkg_hists.append((h, label, color))
+
+    if not bkg_hists and not sig_hists:
+        print(f"Warning: No histograms found for {histname}")
+        return
+
+    hs = ROOT.THStack(f"hs_{config['name']}", "")
+    for h, _, _ in bkg_hists:
+        hs.Add(h)
+
+    h_sig_sum = None
+    for h, _, _ in sig_hists:
+        if h_sig_sum is None:
+            h_sig_sum = h.Clone(f"h_sig_sum_{config['name']}")
+            h_sig_sum.SetDirectory(0)
+        else:
+            h_sig_sum.Add(h)
+
+    bkg_max = hs.GetMaximum() if hs.GetNhists() > 0 else 0.0
+    sig_max = h_sig_sum.GetMaximum() if h_sig_sum else 0.0
+    signal_scale = 1
+    if h_sig_sum and sig_max > 0 and bkg_max > 0:
+        signal_scale = _nice_scale_factor(0.25 * bkg_max / sig_max)
+        if signal_scale > 1:
+            h_sig_sum.Scale(signal_scale)
+
+    if h_sig_sum:
+        h_sig_sum.SetLineColor(ROOT.kRed + 1)
+        h_sig_sum.SetLineWidth(3)
+        h_sig_sum.SetFillStyle(0)
+
+    ymax = max(bkg_max, h_sig_sum.GetMaximum() if h_sig_sum else 0.0)
+    if logy:
+        ymin = 0.1
+        ymax *= 80
+    else:
+        ymin = 0.0
+        ymax *= 1.55
+
+    if hs.GetNhists() > 0:
+        hs.Draw("HIST")
+        hs.GetXaxis().SetTitle(xtitle)
+        hs.GetYaxis().SetTitle("Events")
+        hs.GetXaxis().SetRangeUser(xmin, xmax)
+        hs.SetMinimum(ymin)
+        hs.SetMaximum(ymax)
+        hs.GetXaxis().SetTitleSize(0.045)
+        hs.GetYaxis().SetTitleSize(0.045)
+        hs.GetXaxis().SetLabelSize(0.04)
+        hs.GetYaxis().SetLabelSize(0.04)
+        hs.GetYaxis().SetTitleOffset(1.3)
+
+    if h_sig_sum:
+        h_sig_sum.Draw("HIST SAME")
+
+    guide_lines, guide_labels = _draw_cut_guides(config, ymin, ymax)
+
+    legend_coords = config.get("legend", (0.56, 0.58, 0.92, 0.88))
+    leg = ROOT.TLegend(*legend_coords)
+    leg.SetTextSize(config.get("legend_text_size", 0.031))
+    if h_sig_sum:
+        sig_label = "Signal (ZH, H#rightarrowWW)"
+        if signal_scale > 1:
+            sig_label += f" #times {signal_scale}"
+        leg.AddEntry(h_sig_sum, sig_label, "l")
+    for h, label, _ in reversed(bkg_hists):
+        leg.AddEntry(h, label, "f")
+    leg.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.14, 0.93, "#bf{FCC-ee} #it{Simulation}")
+    latex.SetTextSize(0.035)
+    latex.DrawLatex(0.66, 0.93, "#sqrt{s} = 240 GeV, 10.8 ab^{-1}")
+
+    outdir = os.path.join(outputDir, "cut_diagnostics")
+    os.makedirs(outdir, exist_ok=True)
+    c.SaveAs(os.path.join(outdir, f"{config['name']}.pdf"))
+    c.SaveAs(os.path.join(outdir, f"{config['name']}.png"))
+    c.Close()
 
 
 def collectCutflowData():
@@ -299,8 +560,8 @@ def writeCutflowLatex(summary):
     lines.append(" & ".join(["Total Signal"] + [f"{v:.1f}" for v in summary["total_sig"]]) + r" \\")
     lines.append(" & ".join(["Total Background"] + [f"{v:.1f}" for v in summary["total_bkg"]]) + r" \\")
     lines.append(r"\hline")
-    lines.append(" & ".join(["S/B"] + [("--" if v is None else f"{v:.4f}") for v in summary["s_over_b"]]) + r" \\")
-    lines.append(" & ".join(["S/$\\sqrt{B}$"] + [("--" if v is None else f"{v:.1f}") for v in summary["s_over_sqrt_b"]]) + r" \\")
+    lines.append(" & ".join(["S/B"] + [('--' if v is None else f"{v:.4f}") for v in summary["s_over_b"]]) + r" \\")
+    lines.append(" & ".join(["S/$\\sqrt{B}$"] + [('--' if v is None else f"{v:.1f}") for v in summary["s_over_sqrt_b"]]) + r" \\")
     lines.append(r"\hline")
     lines.append(r"\end{tabular}")
 
@@ -960,6 +1221,12 @@ if __name__ == "__main__":
 
     # Print cutflow table
     makeCutflowTable()
+
+    # Dedicated plots for each analysis cut
+    print("\nGenerating cut-diagnostic plots...")
+    for config in CUT_DIAGNOSTICS:
+        print(f"  {config['name']}...")
+        makeCutDiagnosticPlot(config)
 
     print(f"All plots saved to: {outputDir}")
     print("Done!")
