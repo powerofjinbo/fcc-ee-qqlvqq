@@ -209,6 +209,133 @@ def make_d34_distribution() -> None:
     plt.close(fig)
 
 
+def make_analysis_workflow() -> None:
+    from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
+
+    fig, ax = plt.subplots(figsize=(10.8, 3.8))
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.axis("off")
+
+    boxes = [
+        {
+            "xy": (0.03, 0.26),
+            "w": 0.16,
+            "h": 0.48,
+            "fc": "#E9F2FB",
+            "ec": "#4C78A8",
+            "title": "Winter2023\nDelphes samples",
+            "lines": ["signal + backgrounds", "full event records"],
+        },
+        {
+            "xy": (0.23, 0.26),
+            "w": 0.16,
+            "h": 0.48,
+            "fc": "#EEF6E8",
+            "ec": "#59A14F",
+            "title": "FCCAnalyses\nhistmaker",
+            "lines": ["cutflow", "diagnostic histograms"],
+        },
+        {
+            "xy": (0.43, 0.26),
+            "w": 0.16,
+            "h": 0.48,
+            "fc": "#F9EFE5",
+            "ec": "#E69F00",
+            "title": "treemaker",
+            "lines": ["selected ntuples", "20 BDT input features"],
+        },
+        {
+            "xy": (0.63, 0.26),
+            "w": 0.16,
+            "h": 0.48,
+            "fc": "#F7EAF1",
+            "ec": "#B07AA1",
+            "title": "XGBoost BDT",
+            "lines": ["70/30 development split", "5-fold unbiased scoring"],
+        },
+        {
+            "xy": (0.83, 0.26),
+            "w": 0.14,
+            "h": 0.48,
+            "fc": "#FDECEC",
+            "ec": "#D62728",
+            "title": "pyhf fit",
+            "lines": ["20-bin BDT template", r"$\delta\mu/\mu$ result"],
+        },
+    ]
+
+    for box in boxes:
+        x, y = box["xy"]
+        patch = FancyBboxPatch(
+            (x, y),
+            box["w"],
+            box["h"],
+            boxstyle="round,pad=0.012,rounding_size=0.02",
+            facecolor=box["fc"],
+            edgecolor=box["ec"],
+            linewidth=1.8,
+        )
+        ax.add_patch(patch)
+        ax.text(
+            x + box["w"] / 2,
+            y + box["h"] * 0.73,
+            box["title"],
+            ha="center",
+            va="center",
+            fontsize=11,
+            fontweight="bold",
+            color="#1F2D3A",
+        )
+        ax.text(
+            x + box["w"] / 2,
+            y + box["h"] * 0.38,
+            "\n".join(box["lines"]),
+            ha="center",
+            va="center",
+            fontsize=9.4,
+            color="#2E4053",
+        )
+
+    for left, right in zip(boxes[:-1], boxes[1:]):
+        x1 = left["xy"][0] + left["w"]
+        y1 = left["xy"][1] + left["h"] / 2
+        x2 = right["xy"][0]
+        y2 = right["xy"][1] + right["h"] / 2
+        arrow = FancyArrowPatch(
+            (x1 + 0.01, y1),
+            (x2 - 0.01, y2),
+            arrowstyle="-|>",
+            mutation_scale=14,
+            linewidth=1.8,
+            color="#66788A",
+        )
+        ax.add_patch(arrow)
+
+    ax.text(
+        0.03,
+        0.93,
+        "Analysis workflow for the semi-leptonic H→WW* measurement",
+        fontsize=13,
+        fontweight="bold",
+        ha="left",
+        color="#1F2D3A",
+    )
+    ax.text(
+        0.03,
+        0.11,
+        "The final statistical inference uses the 20-bin BDT score templates built from unbiased 5-fold event scores.",
+        fontsize=9.6,
+        ha="left",
+        color="#445566",
+    )
+
+    fig.tight_layout(pad=0.4)
+    fig.savefig(PLOT_DIR / "analysis_workflow.pdf")
+    fig.savefig(PLOT_DIR / "analysis_workflow.png", dpi=180)
+    plt.close(fig)
+
+
 def draw_straight_line(ax, x1: float, y1: float, x2: float, y2: float, **kwargs) -> None:
     ax.plot([x1, x2], [y1, y2], solid_capstyle="round", **kwargs)
 
@@ -364,6 +491,7 @@ def main() -> None:
     make_pairing_validation()
     make_feynman_diagram()
     make_d34_distribution()
+    make_analysis_workflow()
     print(f"Generated supporting figures in {PLOT_DIR}")
 
 
