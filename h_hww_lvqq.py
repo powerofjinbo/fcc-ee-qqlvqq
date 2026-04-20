@@ -11,7 +11,7 @@ from ml_config import (
     SIGNAL_SAMPLES,
 )
 
-ROOT.TH1.SetDefaultSumw2(ROOT.kTRUE)
+ROOT.TH1.SetDefaultSumw2(ROOT.kTRUE) # 它保证了当你给事例乘以物理权重（如横截面归一化、亮度缩放）时，让直方图上的误差棒是数学上正确的
 
 # ============================================================
 # FCC-ee analysis: e+e- -> Z(qq) H(WW -> l nu qq)
@@ -19,13 +19,13 @@ ROOT.TH1.SetDefaultSumw2(ROOT.kTRUE)
 # ============================================================
 
 ecm = 240
-mode = os.environ.get("LVQQ_MODE", "histmaker").strip().lower()
-if mode not in {"histmaker", "treemaker"}:
-    raise RuntimeError(f"Unsupported LVQQ_MODE={mode!r}; use 'histmaker' or 'treemaker'")
+mode = os.environ.get("LVQQ_MODE", "histmaker").strip().lower()   # 默认histmaker，还有一种模式是treemaker
+if mode not in {"histmaker", "treemaker"}:                        # 要求必须在histmaker和treemaker之间选一个否则报错
+    raise RuntimeError(f"Unsupported LVQQ_MODE={mode!r}; use 'histmaker' or 'treemaker'")   
 
-treemaker = mode == "treemaker"
+treemaker = mode == "treemaker"      # 如果mode是treemaker，那么treemaker这个变量就会被赋予True，否则为False
 
-
+# 决定多少核CPU来跑数据，部署算力
 def _get_worker_cpus() -> int:
     raw_value = os.environ.get("LVQQ_CPUS", os.environ.get("SLURM_CPUS_PER_TASK", "32"))
     try:
@@ -36,6 +36,7 @@ def _get_worker_cpus() -> int:
         raise RuntimeError(f"Invalid CPU setting {raw_value!r}; expected a positive integer")
     return cpus
 
+# 任务清单
 processList = {
     # Signal: ZH -> Z(qq) H(WW* -> lvqq)
     **{sample: {"fraction": SAMPLE_PROCESSING_FRACTIONS[sample]} for sample in SIGNAL_SAMPLES},
@@ -45,7 +46,7 @@ processList = {
 
 inputDir = "/ceph/submit/data/group/fcc/ee/generation/DelphesEvents/winter2023/IDEA/"
 procDict = "/ceph/submit/data/group/fcc/ee/generation/DelphesEvents/winter2023/IDEA/samplesDict.json"
-includePaths = ["../functions/functions.h", "../functions/functions_gen.h", "utils.h"]
+includePaths = ["../functions/functions.h", "../functions/functions_gen.h", "utils.h"]      #调用我的utils.h里面的具体函数
 
 if treemaker:
     outputDir = f"output/h_hww_lvqq/treemaker/ecm{ecm}/"
