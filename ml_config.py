@@ -61,12 +61,12 @@ ML_FEATURES = [
     "jet3_p",              # 动量最小的那个喷注
     "Zcand_dm",            # 重建出的Z boson的mass与其实际物理质量91.19之间的绝对差值，重建是由两个qq重建的，因为在壳，正常来说这个值会趋于0
     "Wstar_m",             # 由qq重建出离壳的W boson，正常信号在20-40GeV
-    "recoil_dmH",          # 反冲质量与 Higgs 实际质量125GeV之间的绝对差值，m**2 = (240 - E_z)**2 - (p_z)**2
-    "Wlep_m",
-    "Hcand_m",
-    "totalJetMass",
-    "thrust",
-    "angleLepMiss",
+    "recoil_dmH",          # 通过算Z boson反冲质量与 Higgs 实际质量125GeV之间的绝对差值，m**2 = (240 - E_z)**2 - (p_z)**2
+    "Wlep_m",              # lepton + 中微子重建出来的W boson质量，这个W是on shell的，分布应该在80GeV左右
+    "Hcand_m",             # 它是将重建出的两个W boson（即 Wlep_m 和 Wstar_m）的四动量直接相加得到的不变质量。
+    "totalJetMass",        # 4个jets合成的总质量，对于信号来说，这个4 jets 理论上应该接近（Z质量 + W质量）
+    "thrust",              # 所有粒子动量分布的各向异性（各向异性的程度），所有粒子动量分布的各向异性（各向异性的程度）
+    "angleLepMiss",        # isolated lepton 与中微子之间的夹角。
     "d_23",
     "d_34",
 ]
