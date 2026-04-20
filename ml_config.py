@@ -2,7 +2,7 @@
 
 import os
 
-
+# 让输入的fraction范围在0-1之间
 def _parse_fraction_value(raw_value: str, env_name: str) -> float:
     try:
         fraction = float(raw_value)
@@ -16,11 +16,11 @@ def _parse_fraction_value(raw_value: str, env_name: str) -> float:
         )
     return fraction
 
-
+# 设定默认fraction的值
 def _default_background_fractions() -> dict[str, float]:
     return {"ww": 1.0, "zz": 1.0, "qq": 1.0, "tautau": 1.0}
 
-
+# 精细化独立覆盖
 def _parse_background_fractions() -> dict[str, float]:
     fractions = _default_background_fractions()
 
@@ -41,31 +41,27 @@ def _parse_background_fractions() -> dict[str, float]:
 
     return fractions
 
+# ML中的辅助信息，并不参与ML模型学习过程
 ML_SPECTATORS = [
     "weight",
     "njets",
 ]
 
+# ML模型学习的所有特征
 ML_FEATURES = [
-    "lepton_p",
-    "lepton_iso",
-    # "missingEnergy_e",  # redundant with missingEnergy_p (massless neutrino)
-    "missingEnergy_p",
-    "missingMass",
-    "cosTheta_miss",
-    "visibleEnergy",
-    # "visibleEnergy_norm",  # redundant: = visibleEnergy / 240 (constant)
-    "jet0_p",
-    "jet1_p",
-    "jet2_p",
-    "jet3_p",
-    # "jet_p_sum",  # redundant: = visibleEnergy (same particle collection)
-    # "Zcand_m",  # redundant with Zcand_dm (= |Zcand_m - 91.19|)
-    "Zcand_dm",
-    "Wstar_m",
-    # "deltaZ",  # redundant: = Zcand_dm (numerically identical)
-    # "recoil_m",  # redundant with recoil_dmH (= |recoil_m - 125|)
-    "recoil_dmH",
+    "lepton_p",            # isolated lepton的动量，来自在壳W boson的衰变
+    "lepton_iso",          # isolated lepton的隔离度，是lepton周围一定范围内其他粒子的动量总和
+    "missingEnergy_p",     # missing momentum的动量，即中微子动量
+    "missingMass",         # 校验是否一个中微子，因为一个中微子的质量应该是约为0，用m = sqrt(E**2 - p**2)来算
+    "cosTheta_miss",       # 中微子方向与对撞机z轴夹角的余弦值，如果缺失能量的方向太靠近束流轴，可能是因为某个粒子跑丢了导致的‘假账’，而不是产生了真正的中微子
+    "visibleEnergy",       # 所有能量的特征，接近240的是背景，反之是信号（因为中微子带走了能量）
+    "jet0_p",              # 动量最大的那个喷注
+    "jet1_p",              # 动量第二大的喷注
+    "jet2_p",              # 动量第三大的喷注
+    "jet3_p",              # 动量最小的那个喷注
+    "Zcand_dm",            # 重建出的Z boson的mass与其实际物理质量91.19之间的绝对差值，重建是由两个qq重建的，因为在壳，正常来说这个值会趋于0
+    "Wstar_m",             # 由qq重建出离壳的W boson，正常信号在20-40GeV
+    "recoil_dmH",          # 反冲质量与 Higgs 实际质量125GeV之间的绝对差值，m**2 = (240 - E_z)**2 - (p_z)**2
     "Wlep_m",
     "Hcand_m",
     "totalJetMass",
