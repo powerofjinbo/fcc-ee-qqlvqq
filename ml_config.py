@@ -67,8 +67,8 @@ ML_FEATURES = [
     "totalJetMass",        # 4个jets合成的总质量，对于信号来说，这个4 jets 理论上应该接近（Z质量 + W质量）
     "thrust",              # 所有粒子动量分布的各向异性（各向异性的程度），所有粒子动量分布的各向异性（各向异性的程度）
     "angleLepMiss",        # isolated lepton 与中微子之间的夹角。
-    "d_23",
-    "d_34",
+    "d_23",                # 将 3 喷注事例合并为 2 喷注时的能量阈值
+    "d_34",                # 将 4 喷注事例合并为 3 喷注时的能量阈值
 ]
 
 SIGNAL_SAMPLES = [
@@ -147,6 +147,3 @@ SAMPLE_PROCESSING_FRACTIONS = {
 }
 
 DEFAULT_TREE_NAME = "events"
-DEFAULT_TREEMAKER_DIR = "output/h_hww_lvqq/treemaker/ecm240"
-DEFAULT_MODEL_DIR = "ml/models/xgboost_bdt_v6"
-DEFAULT_SCORE_BRANCH = "bdt_score"
