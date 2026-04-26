@@ -67,6 +67,7 @@ print(
 doScale = True
 intLumi = 10.8e6 if ecm == 240 else 3e6
 
+# 各个物理量的bin的个数，类似于“精细程度”，“分辨率”
 bins_count = (50, 0, 50)
 bins_nlep = (10, -0.5, 9.5)
 bins_p = (200, 0, 200)
@@ -85,6 +86,8 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("weight", "1.0")
     weightsum = df.Sum("weight")
 
+
+    # 设置12个循环cut，但实际上我们只用7个
     for i in range(0, 12):
         df = df.Define(f"cut{i}", str(i))
 
@@ -97,60 +100,62 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("electrons_all", "FCCAnalyses::ReconstructedParticle::get(Electron0, ReconstructedParticles)")
 
     # cut1: exactly one high-momentum lepton
-    df = df.Define("muons_p20", "FCCAnalyses::ReconstructedParticle::sel_p(20)(muons_all)")
-    df = df.Define("electrons_p20", "FCCAnalyses::ReconstructedParticle::sel_p(20)(electrons_all)")
-    df = df.Define("leptons_p20", "FCCAnalyses::ReconstructedParticle::merge(muons_p20, electrons_p20)")
-    df = df.Define("n_leptons_p20", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p20)")
-    hists.append(df.Histo1D(("n_leptons_p20", "", *bins_nlep), "n_leptons_p20"))
-    df = df.Filter("n_leptons_p20 == 1")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut1"))
+    df = df.Define("muons_p20", "FCCAnalyses::ReconstructedParticle::sel_p(20)(muons_all)")   # 筛选miu子
+    df = df.Define("electrons_p20", "FCCAnalyses::ReconstructedParticle::sel_p(20)(electrons_all)") # 筛选电子
+    df = df.Define("leptons_p20", "FCCAnalyses::ReconstructedParticle::merge(muons_p20, electrons_p20)")  # 合并轻子名称
+    df = df.Define("n_leptons_p20", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p20)")  # 计算总轻子个数
+    hists.append(df.Histo1D(("n_leptons_p20", "", *bins_nlep), "n_leptons_p20"))   # 保存一个过滤前的直方图
+    df = df.Filter("n_leptons_p20 == 1") # 最后关卡，只有lepton = 1才算通过
+    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut1"))   # 在 cutFlow 直方图的第 1 个 Bin 填入通过这一关的事例数。
 
-    df = df.Define("lepton_p", "FCCAnalyses::ReconstructedParticle::get_p(leptons_p20)[0]")
-    hists.append(df.Histo1D(("lepton_p", "", *bins_p), "lepton_p"))
+    df = df.Define("lepton_p", "FCCAnalyses::ReconstructedParticle::get_p(leptons_p20)[0]")  # 定义幸存（通过）的lepton，直接取第一个因为一共就一个
+    hists.append(df.Histo1D(("lepton_p", "", *bins_p), "lepton_p"))  # 为这唯一的轻子画一个动量谱
 
     # cut2: isolated prompt lepton
-    df = df.Define("lepton_iso_v", "FCCAnalyses::coneIsolation(0.01, 0.30)(leptons_p20, ReconstructedParticles)")
-    df = df.Define("lepton_iso", "lepton_iso_v[0]")
-    hists.append(df.Histo1D(("lepton_iso", "", *bins_iso), "lepton_iso"))
-    df = df.Filter("lepton_iso < 0.15")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut2"))
+    df = df.Define("lepton_iso_v", "FCCAnalyses::coneIsolation(0.01, 0.30)(leptons_p20, ReconstructedParticles)")  # 计算每个lepton的孤立度
+    df = df.Define("lepton_iso", "lepton_iso_v[0]")  # 取出第一个也是唯一一个lepton的孤立度数值，看是否符合规则（真正的信号，这种轻子非常干净，周围没有任何其他粒子，这才是我们要找的目标。）
+    hists.append(df.Histo1D(("lepton_iso", "", *bins_iso), "lepton_iso")) # 绘制过滤前的孤立度的直方图
+    df = df.Filter("lepton_iso < 0.15")   # 只保留孤立度小于0.15的事例
+    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut2")) # 更新cutflow，放进第二个bin
 
     # cut3: veto extra leptons above 5 GeV
     df = df.Define("muons_p5", "FCCAnalyses::ReconstructedParticle::sel_p(5)(muons_all)")
-    df = df.Define("electrons_p5", "FCCAnalyses::ReconstructedParticle::sel_p(5)(electrons_all)")
-    df = df.Define("leptons_p5", "FCCAnalyses::ReconstructedParticle::merge(muons_p5, electrons_p5)")
-    df = df.Define("n_leptons_p5", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p5)")
-    hists.append(df.Histo1D(("n_leptons_p5", "", *bins_nlep), "n_leptons_p5"))
-    df = df.Filter("n_leptons_p5 == 1")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut3"))
+    df = df.Define("electrons_p5", "FCCAnalyses::ReconstructedParticle::sel_p(5)(electrons_all)") # 把动量大于5 GeV的lepton都筛选出来
+    df = df.Define("leptons_p5", "FCCAnalyses::ReconstructedParticle::merge(muons_p5, electrons_p5)") # 合并一下，叫做leptons_p5
+    df = df.Define("n_leptons_p5", "FCCAnalyses::ReconstructedParticle::get_n(leptons_p5)") # 数一下一共有几个
+    hists.append(df.Histo1D(("n_leptons_p5", "", *bins_nlep), "n_leptons_p5")) # 画个图
+    df = df.Filter("n_leptons_p5 == 1") # 要求大于5 GeV的只能有一个，多了不行
+    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut3")) # 画个图
 
     # cut4: missing-energy selection
-    df = df.Define("missingEnergy_rp", "FCCAnalyses::missingEnergy(ecm, ReconstructedParticles)")
-    df = df.Define("missingEnergy_e", "missingEnergy_rp[0].energy")
-    df = df.Define("missingEnergy_p", "FCCAnalyses::ReconstructedParticle::get_p(missingEnergy_rp)[0]")
-    df = df.Define("missingMass", "FCCAnalyses::missingMass(ecm, ReconstructedParticles)")
-    df = df.Define("cosTheta_miss", "FCCAnalyses::get_cosTheta_miss(missingEnergy_rp)")
-    hists.append(df.Histo1D(("missingEnergy_e", "", *bins_met), "missingEnergy_e"))
+    df = df.Define("missingEnergy_rp", "FCCAnalyses::missingEnergy(ecm, ReconstructedParticles)") # 调用底层函数missingEnergy， 输入总能量ecm = 240 和所有可见粒子，这个函数自动算出缺失四动量的对象，当作幽灵粒子存起来
+    df = df.Define("missingEnergy_e", "missingEnergy_rp[0].energy") # 选出幽灵粒子列表的第一个，直接读取他的energy属性
+    df = df.Define("missingEnergy_p", "FCCAnalyses::ReconstructedParticle::get_p(missingEnergy_rp)[0]") # 计算那个幽灵粒子的动量大小
+    df = df.Define("missingMass", "FCCAnalyses::missingMass(ecm, ReconstructedParticles)") # 根据能量守恒和动量守恒， 直接算逃跑东西的总质量
+    df = df.Define("cosTheta_miss", "FCCAnalyses::get_cosTheta_miss(missingEnergy_rp)") # 算出缺失动量在探测器里的角度余弦值，绝对值接近1，说明是水瓶飞走；接近0，说明是垂直往外崩
+    hists.append(df.Histo1D(("missingEnergy_e", "", *bins_met), "missingEnergy_e")) 
     hists.append(df.Histo1D(("missingEnergy_p", "", *bins_met), "missingEnergy_p"))
     hists.append(df.Histo1D(("missingMass", "", *bins_m), "missingMass"))
-    hists.append(df.Histo1D(("cosTheta_miss", "", *bins_cos), "cosTheta_miss"))
-    df = df.Filter("missingEnergy_e > 20")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut4"))
+    hists.append(df.Histo1D(("cosTheta_miss", "", *bins_cos), "cosTheta_miss")) # 把上面的物理特性信息都存在直方图里面
+    df = df.Filter("missingEnergy_e > 20") # energy必须大于20！否则都滚蛋！
+    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut4")) # 通过筛选后，在统计图上加一笔
 
     # cut5: remove the selected lepton and cluster the rest into 4 jets
     df = df.Define("rps_no_leptons", "FCCAnalyses::ReconstructedParticle::remove(ReconstructedParticles, leptons_p5)")
-    df = df.Alias("rps_sel", "rps_no_leptons")
+    df = df.Alias("rps_sel", "rps_no_leptons") # 把之前都选好的粒子都移走，因为我们接下来别的jet算法可能会误伤，以防万一
 
-    df = df.Define("visibleEnergy", "FCCAnalyses::visibleEnergy(rps_sel)")
-    df = df.Define("visibleEnergy_norm", "visibleEnergy / ecm")
-    hists.append(df.Histo1D(("visibleEnergy", "", *bins_p), "visibleEnergy"))
+    df = df.Define("visibleEnergy", "FCCAnalyses::visibleEnergy(rps_sel)") # 把筛选完剩下的粒子放进函数 算出总能量visibleEnergy，应该全部来自于4个夸克
+    df = df.Define("visibleEnergy_norm", "visibleEnergy / ecm") # 用这个能量除以对撞机能量240GeV，算出一个百分比（归一化）
+    hists.append(df.Histo1D(("visibleEnergy", "", *bins_p), "visibleEnergy")) # 画成直方图存起来
 
     df = df.Define("RP_px", "FCCAnalyses::ReconstructedParticle::get_px(rps_sel)")
     df = df.Define("RP_py", "FCCAnalyses::ReconstructedParticle::get_py(rps_sel)")
     df = df.Define("RP_pz", "FCCAnalyses::ReconstructedParticle::get_pz(rps_sel)")
-    df = df.Define("RP_e", "FCCAnalyses::ReconstructedParticle::get_e(rps_sel)")
+    df = df.Define("RP_e", "FCCAnalyses::ReconstructedParticle::get_e(rps_sel)")       # 这四行代码作用就是提取剩下的粒子的所有信息，并单独列出来，为喷注聚类算法准备食材
 
-    df = df.Define("pseudo_jets", "FCCAnalyses::JetClusteringUtils::set_pseudoJets(RP_px, RP_py, RP_pz, RP_e)")
+    df = df.Define("pseudo_jets", "FCCAnalyses::JetClusteringUtils::set_pseudoJets(RP_px, RP_py, RP_pz, RP_e)") # 把你刚才提取出的坐标和能量，打包成 pseudoJets（伪喷注）格式。
+    为什么要这步：高能物理界有一个垄断级别的聚类软件包叫 FastJet。它有自己专属的数据格式。这一行就是把你粗糙的数字列表，转换成 FastJet 能直接处理的标准格式
+    
     df = df.Define("clustered_jets", "JetClustering::clustering_ee_kt(2, 4, 0, 10)(pseudo_jets)")
     df = df.Define("jets", "FCCAnalyses::JetClusteringUtils::get_pseudoJets(clustered_jets)")
     df = df.Define("njets", "jets.size()")
