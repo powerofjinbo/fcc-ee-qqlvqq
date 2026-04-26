@@ -156,44 +156,51 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("pseudo_jets", "FCCAnalyses::JetClusteringUtils::set_pseudoJets(RP_px, RP_py, RP_pz, RP_e)") # 把你刚才提取出的坐标和能量，打包成 pseudoJets（伪喷注）格式。
     为什么要这步：高能物理界有一个垄断级别的聚类软件包叫 FastJet。它有自己专属的数据格式。这一行就是把你粗糙的数字列表，转换成 FastJet 能直接处理的标准格式
     
-    df = df.Define("clustered_jets", "JetClustering::clustering_ee_kt(2, 4, 0, 10)(pseudo_jets)")
-    df = df.Define("jets", "FCCAnalyses::JetClusteringUtils::get_pseudoJets(clustered_jets)")
+    df = df.Define("clustered_jets", "JetClustering::clustering_ee_kt(2, 4, 0, 10)(pseudo_jets)")   # 调用正负电子专用的聚类算法，利用参数 4 强行把所有强子碎片拼凑成恰好 4 个喷注，然后把它们解析成你可以读取的 jets 列表
+    df = df.Define("jets", "FCCAnalyses::JetClusteringUtils::get_pseudoJets(clustered_jets)")        # 从上一步生成的 clustered_jets 中，提取出纯粹的 jets 列表。
+    
     df = df.Define("njets", "jets.size()")
     hists.append(df.Histo1D(("njets", "", *bins_count), "njets"))
-    df = df.Filter("njets == 4")
+    df = df.Filter("njets == 4")                                    # 这是你的 Cut 5。数一下喷注的数量，画个图记录一下，然后无情砍掉那些因为碎片太少或太刁钻、导致算法死活拼不出 4 个喷注的劣质事件。
+                                                                    # 过完这道门，剩下的事件百分之百都拥有刚好 4 个喷注。
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut5"))
 
     df = df.Define("jet0_p", "sqrt(jets[0].px()*jets[0].px() + jets[0].py()*jets[0].py() + jets[0].pz()*jets[0].pz())")
     df = df.Define("jet1_p", "sqrt(jets[1].px()*jets[1].px() + jets[1].py()*jets[1].py() + jets[1].pz()*jets[1].pz())")
-    df = df.Define("jet2_p", "sqrt(jets[2].px()*jets[2].px() + jets[2].py()*jets[2].py() + jets[2].pz()*jets[2].pz())")
-    df = df.Define("jet3_p", "sqrt(jets[3].px()*jets[3].px() + jets[3].py()*jets[3].py() + jets[3].pz()*jets[3].pz())")
-    df = df.Define("jet_p_sum", "jet0_p + jet1_p + jet2_p + jet3_p")
+    df = df.Define("jet2_p", "sqrt(jets[2].px()*jets[2].px() + jets[2].py()*jets[2].py() + jets[2].pz()*jets[2].pz())")    # 用勾股定理计算每个jet的三维动量大小
+    df = df.Define("jet3_p", "sqrt(jets[3].px()*jets[3].px() + jets[3].py()*jets[3].py() + jets[3].pz()*jets[3].pz())")    # 剥离了方向信息，纯粹算冲劲多大
+    df = df.Define("jet_p_sum", "jet0_p + jet1_p + jet2_p + jet3_p")            # 把上面算出的四个动量数值直接相加（标量和）
     hists.append(df.Histo1D(("jet0_p", "", *bins_p), "jet0_p"))
     hists.append(df.Histo1D(("jet1_p", "", *bins_p), "jet1_p"))
-    hists.append(df.Histo1D(("jet2_p", "", *bins_p), "jet2_p"))
+    hists.append(df.Histo1D(("jet2_p", "", *bins_p), "jet2_p"))        # 画一下图
     hists.append(df.Histo1D(("jet3_p", "", *bins_p), "jet3_p"))
 
     # Pair jets with a Z-priority strategy for H -> WW*
     df = df.Define("jets_e", "FCCAnalyses::JetClusteringUtils::get_e(jets)")
-    df = df.Define("jets_px", "FCCAnalyses::JetClusteringUtils::get_px(jets)")
+    df = df.Define("jets_px", "FCCAnalyses::JetClusteringUtils::get_px(jets)")    # 上一步你刚拿到 4 个干净的jets，现在你需要把每个喷注的能量E和三个方向的动量（px, py, pz）分别提取出来，存成四个独立的数组
     df = df.Define("jets_py", "FCCAnalyses::JetClusteringUtils::get_py(jets)")
     df = df.Define("jets_pz", "FCCAnalyses::JetClusteringUtils::get_pz(jets)")
-    df = df.Define("jets_tlv", "FCCAnalyses::makeLorentzVectors(jets_px, jets_py, jets_pz, jets_e)")
-    df = df.Define("paired_ZWstar", "FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, 91.19)")
-    df = df.Define("deltaZ", "FCCAnalyses::pairing_Zpriority_deltaZ(jets_tlv, 91.19)")
+    df = df.Define("jets_tlv", "FCCAnalyses::makeLorentzVectors(jets_px, jets_py, jets_pz, jets_e)") 
+    # 底层 C++ 的配对引擎需要的是 TLorentzVector（ROOT里的标准四维动量对象）。所以用 makeLorentzVectors 把刚才拆解出来的 E, px, py, pz 重新打包，合成一个标准输入格式 jets_tlv，准备送进我的引擎。
+    df = df.Define("paired_ZWstar", "FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, 91.19)") # 直接呼叫你刚刚在 utils.h 里写的那个绝妙的主函数 pairing_Zpriority_4jets。传入打包好的 4 个喷注和 Z 玻色子的标准质量 91.19。引擎经过穷举计算后，返回一个装有两个粒子的列表，命名为 paired_ZWstar
+    df = df.Define("deltaZ", "FCCAnalyses::pairing_Zpriority_deltaZ(jets_tlv, 91.19)") # 呼叫那个孪生打分函数，它直接返回“全场最佳组合距离 91.19 差了多少”，存进变量 deltaZ 里。这个值越小，说明这个事件越有可能是真实的信号
 
+    # 从引擎退回来的篮子（paired_ZWstar）里，把第 0 号座位的人请出来，命名为 Zcand（Z 候选者）；把第 1 号座位的人请出来，命名为 Wstar（虚 W 候选者）
     df = df.Define("Zcand", "paired_ZWstar[0]")
     df = df.Define("Wstar", "paired_ZWstar[1]")
+    # 读取我们拼出来的 Z 候选者的不变质量。如果你画出它的分布图，它应该会在 91 GeV 附近形成一个漂亮的钟形波峰（共振峰）
     df = df.Define("Zcand_m", "Zcand.M()")
-    df = df.Define("Zcand_dm", "abs(Zcand_m - 91.19)")
+    df = df.Define("Zcand_dm", "abs(Zcand_m - 91.19)") # 计算这个拼出来的质量和理想质量的具体偏差
+    # 读取那个“兜底”剩下的虚 W 玻色子的质量。因为它是 off-shell 的，它的质量分布会非常宽泛，通常集中在 10 到 40 GeV 之间，而不是真实的 80 GeV。这就是你采用“Z优先策略”获得的最大物理回报！
     df = df.Define("Wstar_m", "Wstar.M()")
-
+    # 把你千辛万苦算出来的 Z质量、虚W质量 和 配对质量误差分(deltaZ) 全部画成一维直方图，丢进 hists 列表里等待最后输出。这些图将是你分析报告里最核心的物理结果展示。
     hists.append(df.Histo1D(("Zcand_m", "", *bins_m), "Zcand_m"))
     hists.append(df.Histo1D(("Wstar_m", "", *bins_m), "Wstar_m"))
     hists.append(df.Histo1D(("deltaZ", "", *bins_chi2), "deltaZ"))
 
     # New features from autonomous exploration
     # Jet merging variables (Durham kT distance when going from n+1 to n jets)
+    # 从之前那台“破壁机”(clustered_jets) 的历史记录里，提取出喷注从 4 个合并成 3 个时的距离参数 d_34，以及从 3 个合并成 2 个时的距离参数 d_23。（虽然应该说是能量参数）
     df = df.Define("d_23", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 2)")
     df = df.Define("d_34", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 3)")
 
