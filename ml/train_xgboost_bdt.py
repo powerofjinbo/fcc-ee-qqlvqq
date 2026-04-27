@@ -37,7 +37,7 @@ from ml_config import (
     BACKGROUND_SAMPLES,
     DEFAULT_MODEL_DIR,
     DEFAULT_TREE_NAME,
-    DEFAULT_TREEMAKER_DIR,
+    DEFAULT_TREEMAKER_DIR,            # 材料都准备打包好
     ML_FEATURES,
     SAMPLE_PROCESSING_FRACTIONS,
     SIGNAL_SAMPLES,
@@ -48,7 +48,7 @@ from ml_config import (
 # only processing a subset of generated events.
 SAMPLE_INFO = {
     # Signal (fraction=1, all events processed)
-    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": 1.0},
+    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": 1.0},            # 加载好所有原料，信号背景
     "wzp6_ee_bbH_HWW_ecm240": {"xsec": 0.006350, "ngen": 1000000, "fraction": 1.0},
     "wzp6_ee_ccH_HWW_ecm240": {"xsec": 0.004988, "ngen": 1200000, "fraction": 1.0},
     "wzp6_ee_ssH_HWW_ecm240": {"xsec": 0.006403, "ngen": 1200000, "fraction": 1.0},
@@ -95,21 +95,21 @@ def parse_args():
     parser.add_argument('--signal-samples', nargs='*', default=SIGNAL_SAMPLES)
     parser.add_argument('--background-samples', nargs='*', default=BACKGROUND_SAMPLES)
     parser.add_argument('--features', nargs='*', default=ML_FEATURES)
-    parser.add_argument('--test-size', type=float, default=0.30)
-    parser.add_argument('--random-state', type=int, default=42)
+    parser.add_argument('--test-size', type=float, default=0.30) # 70训练，30测试
+    parser.add_argument('--random-state', type=int, default=42) # 只是个随机的数字，随机种子，确保可重复性
     parser.add_argument('--n-jobs', type=int, default=8)
-    parser.add_argument('--no-grid-search', action='store_true',
+    parser.add_argument('--no-grid-search', action='store_true',            # 是让 AI 自己去排列组合尝试成百上千种参数，寻找最优解，这通常要跑好几个小时甚至通宵
                         help='Skip grid search, use default hyperparameters')
     parser.add_argument('--no-plots', action='store_true',
                         help='Skip diagnostic plots')
-    parser.add_argument('--kfold', type=int, default=5,
+    parser.add_argument('--kfold', type=int, default=5,       # 5 fold交叉验证
                         help='Number of folds for k-fold CV scoring (0 to disable)')
     return parser.parse_args()
 
 
 def get_tree_status(root_file, tree_name):
     has_tree = tree_name in root_file
-    num_entries = root_file[tree_name].num_entries if has_tree else 0
+    num_entries = root_file[tree_name].num_entries if has_tree else 0        # 确认数据表的存在 (行 2-3)
 
     selected = None
     if 'eventsSelected' in root_file:
@@ -121,7 +121,7 @@ def get_tree_status(root_file, tree_name):
     processed = None
     if 'eventsProcessed' in root_file:
         try:
-            processed = int(root_file['eventsProcessed'].member('fVal'))
+            processed = int(root_file['eventsProcessed'].member('fVal'))        # 这一段就是用python读取c++的信息，做一个信息转换
         except Exception:
             processed = None
 
@@ -140,9 +140,12 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
     for sample in sample_names:
         root_path = input_dir / f'{sample}.root'
         if not root_path.exists():
-            print(f'[warn] missing sample: {root_path}')
+            print(f'[warn] missing sample: {root_path}')            # 按着你给的清单（比如WW, ZZ, ZH信号等），一个个去文件夹里找对应的 .root 文件
             continue
-
+# 0-pass）：这是极其专业的高能物理细节！有时候，你让模拟器生成了 10 万个某种罕见的背景事件。
+# 但是在跑 C++ 预处理代码时，因为你的 Cut 太严了（比如要求必须有两个喷注一个轻子），这 10 万个事件全军覆没，一个都没活下来。
+# 代码逻辑：遇到这种情况，C++ 引擎根本就不会去创建那棵数据树（Tree）。如果没有这段代码的保护，程序就会因为找不到 Tree 而报错。
+# 这里的逻辑是：如果没找到树，且侦察兵看到门上的标签写着“幸存者=0” (selected == 0)，那程序就知道：“哦，不是文件坏了，是这批数据全死光了。” 于是淡定地打印一条 [info] 并跳过。
         with uproot.open(root_path) as root_file:
             status = get_tree_status(root_file, tree_name)
             if not status['has_tree']:
@@ -165,41 +168,43 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
             missing = [f for f in features if f not in available]
             if missing:
                 print(f'[warn] {root_path} missing branches: {missing}')
-            frame = tree.arrays(use_features, library='pd')
+            frame = tree.arrays(use_features, library='pd')           
+            # uproot 库施展了魔法，把 C++ 底层以列式存储的复杂二进制 ROOT 树，瞬间读取到内存中，并将其转化为一个 Pandas DataFrame
 
         # Compute physics weight: lumi * xsec / ngen_total
         info = SAMPLE_INFO.get(sample, {})
         if info:
             frac = info.get('fraction', 1.0)
-            phys_weight = INT_LUMI * info['xsec'] / (info['ngen'] * frac)
+            phys_weight = INT_LUMI * info['xsec'] / (info['ngen'] * frac)    # 给出物理权重，一个数字
         else:
             phys_weight = 1.0
             print(f'[warn] no cross-section info for {sample}, using weight=1')
 
-        frame['phys_weight'] = phys_weight
-        frame['label'] = label
-        frame['sample_name'] = sample
-        n = len(frame)
-        expected = INT_LUMI * info.get('xsec', 0)
-        print(f'  {sample}: {n} events, phys_weight={phys_weight:.6f}, '
+        frame['phys_weight'] = phys_weight        # 告诉 AI 这个事件在现实里值多少分量
+        frame['label'] = label                    # 这可是“泄题”答案！ 1 代表信号，0 代表背景。AI 就是要看着这个答案来学习调整内部网络
+        frame['sample_name'] = sample             # 记下它的老家（比如它来自 p8_ee_WW_ecm240）。这个对 AI 没用，但对你事后画图（看看 AI 是把哪种背景认错了）极其关键
+        n = len(frame)                            # (存活数)：你的代码历经千辛万苦，最后实际上向 Pandas 里塞了多少行数据
+        expected = INT_LUMI * info.get('xsec', 0)    # 有效产出，经过你前面 7 道极其严苛的 Cut 之后，在真实的对撞机里，这种事件还能剩下多少个？
+        print(f'  {sample}: {n} events, phys_weight={phys_weight:.6f}, '        # (理论总产出)：如果不做任何 Cut，大自然原本会生成多少个这种事件
               f'effective={n*phys_weight:.0f} (expected total={expected:.0f})')
         frames.append(frame)
 
     if not frames:
         raise RuntimeError('No input ntuples found for training.')
     return pd.concat(frames, ignore_index=True)
-
+    # 上面是 Pandas 最强大的拼接魔法。它把所有表格首尾相连，上下拼接，砸成了一张包含所有特征、所有权重、所有标签的超级大表。
+    至此，数据准备工作彻底收官！
 
 def normalize_class_weights(w, y):
     """Normalize weights so signal and background have equal total weight.
 
     Preserves intra-class weight structure (relative weights within each class
     are unchanged). This ensures balanced learning while respecting the physics
-    weight ratios between samples within each class.
+    weight ratios between samples within each class.                                 
     """
     w = w.copy()
     sig_mask = y == 1
-    bkg_mask = y == 0
+    bkg_mask = y == 0                                                                # 归一化一下，让信号背景1:1，这样才公平！
     sig_total = w[sig_mask].sum()
     bkg_total = w[bkg_mask].sum()
     # Scale both classes to have total weight = number of events in smaller class
@@ -217,13 +222,17 @@ def weighted_ks_test(scores_a, weights_a, scores_b, weights_b, n_bins=50):
     Returns (chi2/ndf, p_value) using weighted histograms.
     scipy's ks_2samp doesn't support weights, so we use a binned approach.
     """
+
+    # 动作：把 AI 给出的打分（从 0 分到 1 分，0 代表背景，1 代表信号）切成 50 个区间（Bins）
+    # 然后，把 scores_a（通常是训练集的打分）和 scores_b（通常是测试集的打分）分别投进这 50 个格子里，投进去的不是简单的“次数 +1”，而是“加上这个事件的物理权重”。
     from scipy.stats import chi2 as chi2_dist
     bins = np.linspace(0, 1, n_bins + 1)
 
     h_a, _ = np.histogram(scores_a, bins=bins, weights=weights_a)
     h_b, _ = np.histogram(scores_b, bins=bins, weights=weights_b)
 
-    # Normalize to unit area
+    # Normalize to unit area，训练集的数据量通常比测试集大得多（比如 70% 对 30%）。
+    # 为了让它们能在同一张图上对比，必须把它们的高度都压缩/拉伸，让它们各自的总面积（概率之和）都变成 1
     sum_a = h_a.sum()
     sum_b = h_b.sum()
     if sum_a > 0:
@@ -233,20 +242,21 @@ def weighted_ks_test(scores_a, weights_a, scores_b, weights_b, n_bins=50):
 
     # Binned chi2: sum (a - b)^2 / (var_a + var_b)
     # Variance from weighted histograms
-    h_a_w2, _ = np.histogram(scores_a, bins=bins, weights=weights_a**2)
+    h_a_w2, _ = np.histogram(scores_a, bins=bins, weights=weights_a**2)        # 计算了每个 Bin 真正的统计波动范围（Variance）。
     h_b_w2, _ = np.histogram(scores_b, bins=bins, weights=weights_b**2)
     var_a = h_a_w2 / (sum_a**2) if sum_a > 0 else np.zeros_like(h_a)
     var_b = h_b_w2 / (sum_b**2) if sum_b > 0 else np.zeros_like(h_b)
 
-    denom = var_a + var_b
+    denom = var_a + var_b                                #  终极卡方审判，算法开始巡视这 50 个格子，每个格子都会算一下卡方，
+                                                         # 看训练集的柱子和测试集的柱子高度差了多少。如果这个高度差，超出了正常的统计波动范围（分母的 Var），卡方值就会剧烈飙升！
     mask = denom > 0
     chi2_val = np.sum((h_a[mask] - h_b[mask])**2 / denom[mask])
     ndf = mask.sum() - 1
     p_value = 1.0 - chi2_dist.cdf(chi2_val, ndf) if ndf > 0 else 1.0
-    return chi2_val / max(ndf, 1), p_value
+    return chi2_val / max(ndf, 1), p_value                # 最后，把卡方值转换成统计学里著名的 p_value，越大说明泛化能力很强，没有过拟合
 
 
-def make_validation_split(X, y, w, random_state, test_size=0.2):
+def make_validation_split(X, y, w, random_state, test_size=0.2):            # 20% 是从已经切好的“训练集 (Train Set)”里面再次切出来的
     """Create a validation split that is disjoint from the fit sample."""
     indices = np.arange(len(X))
     idx_fit, idx_val = train_test_split(
@@ -266,7 +276,7 @@ def fit_with_early_stopping(X_train, y_train, w_train, params, random_state, n_j
     )
 
     fit_kwargs = {
-        'objective': 'binary:logistic',
+        'objective': 'binary:logistic',            # 告诉 AI，我们现在做的是非黑即白的二分类任务（信号 vs 背景），你要输出一个 0 到 1 之间的概率。
         'eval_metric': eval_metric,
         'tree_method': 'hist',
         'random_state': random_state,
@@ -274,7 +284,9 @@ def fit_with_early_stopping(X_train, y_train, w_train, params, random_state, n_j
         'verbosity': 0,
         **params,
     }
-    model_es = xgb.XGBClassifier(early_stopping_rounds=30, **fit_kwargs)
+    model_es = xgb.XGBClassifier(early_stopping_rounds=30, **fit_kwargs)        # 注意这里的 model_es（es 代表 early stopping），它并不是我们最终要用的模型，而是一个“探路先锋”！
+    # 探路先锋开始疯狂建树。每建完一棵，它就拿 X_val 考一次试。
+    # 如果它连续建了 30 棵树，在 X_val 上的得分不但没有提高，反而下降了（说明开始过拟合了），它就会立刻强行熄火！！！
     model_es.fit(
         X_fit, y_fit, sample_weight=w_fit,
         eval_set=[(X_val, y_val)],
@@ -282,23 +294,44 @@ def fit_with_early_stopping(X_train, y_train, w_train, params, random_state, n_j
         verbose=False,
     )
 
+    # 先锋熄火后，程序翻看它的训练日志：
+    # “报告！我在建到第 215 棵树的时候，在模拟考里的成绩达到了巅峰。后面的 30 棵树全是在死记硬背！”
     best_iteration = getattr(model_es, 'best_iteration', None)
     n_estimators_final = (best_iteration + 1
                           if best_iteration is not None
                           else params['n_estimators'])
 
     final_kwargs = dict(fit_kwargs)
+
+    # 最聪明的“回炉重造”
+    # 很多新手做到第四步，拿到那个 model_es 就直接当最终模型用了。但这在物理学家眼里是极其浪费的！
+    # 因为那个先锋模型，仅仅是用 80% 的 X_fit 训练出来的，那 20% 的 X_val 它为了避嫌，根本没看过里面的具体特征。
     final_kwargs['n_estimators'] = n_estimators_final
     model = xgb.XGBClassifier(**final_kwargs)
     model.fit(X_train, y_train, sample_weight=w_train, verbose=False)
 
+
+
+    # 高手的做法是：
+
+    # 抛弃那个探路先锋 model_es。
+
+    # 造一个全新的、干干净净的模型 (model)。
+
+    # 把刚刚刺探到的最高机密（最多只能建 216 棵树）死死锁进新模型的参数里。
+
+    # 把完整的 X_train（100% 的日常复习资料，把那 20% 的模拟考卷也塞回去让它看答案） 毫无保留地喂给新模型！
+
+    # 因为锁死了树的上限是 216 棵，新模型在这 100% 的数据上绝对不会过拟合，并且榨干了每一滴数据的价值！
     val_score = model.predict_proba(X_val)[:, 1]
     val_auc = roc_auc_score(y_val, val_score, sample_weight=w_val)
 
     evals_result = model_es.evals_result() if hasattr(model_es, 'evals_result') else {}
     return model, best_iteration, n_estimators_final, val_auc, evals_result
 
-
+# 现在我们需要寻找树的其他参数，
+# 痛点：如果你有 200 万行物理事件数据，还要去测试几十种模型参数，那你的电脑可能要跑到下个月才能停下来。
+# 妙招：算法在这里做了一个“抽样（Subsample）”。如果总数据大于 5 万，它就随机抽出 50,000 个事件来当“试验田”。
 def grid_search(X_train, y_train, w_train, random_state, n_jobs):
     """Run hyperparameter grid search on a subsample with early stopping."""
     print('\n=== Hyperparameter Grid Search ===')
@@ -315,6 +348,11 @@ def grid_search(X_train, y_train, w_train, random_state, n_jobs):
     )
 
     # Extended grid: now includes min_child_weight and subsample
+    # 这就是程序的“试验配方表”。这几个参数全是 XGBoost 防过拟合的顶级法宝：
+    # max_depth (树的深度)：只让它看 3、4、5 层。对于高能物理来说，太深的树（比如 10 层）几乎肯定会把蒙特卡洛模拟的随机波动（噪音）当成物理定律背下来。
+    # learning_rate (学习率)：每次树更新时跨的步子有多大。
+    # min_child_weight：物理权重数据的克星！ 如果一片树叶子上的总权重小于这个值，程序就不允许继续分裂。这极其有效地防止了模型去死抠那些极端罕见的离群点。
+    # subsample / colsample_bytree：这就是机器学习里著名的“Dropout/Bagging”思维。每次建树，随机丢弃 20%~30% 的事件或特征（比如不让它看 recoil_m）。这能逼着模型不能只依赖某一个强力特征，必须全方位学习。
     param_grid = {
         'max_depth': [3, 4, 5],
         'learning_rate': [0.01, 0.05, 0.1],
@@ -328,6 +366,9 @@ def grid_search(X_train, y_train, w_train, random_state, n_jobs):
     best_params = {}
     results = []
 
+    # 接下来它就要开启一个巨大的 for 循环。把这 108 个“克隆体 AI”扔进那 5 万条数据的角斗场里。
+    # 每个克隆体依然配备了我们上一回合聊过的 early_stopping_rounds=30（探路先锋机制），如果连续 30 次考不好就自动抬走。
+    # 程序就是要克隆出 108 个不同的 XGBoost 模型，逐一跑完这 108 个配方，最后对比它们的 AUC 考试分数，选出“最强王者”。
     combos = list(product(
         param_grid['max_depth'],
         param_grid['learning_rate'],
@@ -347,7 +388,7 @@ def grid_search(X_train, y_train, w_train, random_state, n_jobs):
             learning_rate=lr,
             n_estimators=n_est,
             min_child_weight=mcw,
-            subsample=ss,
+            subsample=ss,                                            # 遍历所有组合方式108
             colsample_bytree=csbt,
             random_state=random_state,
             n_jobs=n_jobs,
@@ -360,8 +401,10 @@ def grid_search(X_train, y_train, w_train, random_state, n_jobs):
             sample_weight_eval_set=[w_v],
             verbose=False,
         )
-        score = model.predict_proba(X_v)[:, 1]
+        score = model.predict_proba(X_v)[:, 1]                       # 打分，算出AUC
         auc = roc_auc_score(y_v, score, sample_weight=w_v)
+        
+        # 如果当前这个克隆体考出的 AUC，比之前的历史最高分（best_auc）还要高，它就会立刻把前任踢下台，把自己的参数记录在 best_params 皇冠里
         results.append({
             'max_depth': depth, 'learning_rate': lr,
             'n_estimators': n_est, 'min_child_weight': mcw,
@@ -385,7 +428,8 @@ def grid_search(X_train, y_train, w_train, random_state, n_jobs):
           f'csbt={best_params["colsample_bytree"]}, '
           f'AUC={best_auc:.4f}')
     return best_params, results
-
+# 当 108 次循环彻底跑完，程序的最后几行会极其自豪地 print 出最终加冕为王的“最优参数组合”，并把这套参数通过 return best_params, results 交还给主程序。
+# 主程序拿到这套“最强配方”后，终于要用 100% 的海量物理数据进行最终的大结局训练了
 
 def make_plots(output_dir, y_train, y_test, train_score, test_score,
                w_train, w_test, model, features, full_df_test=None):
@@ -395,7 +439,7 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
     except ImportError:
-        print('[warn] matplotlib not available, skipping plots')
+        print('[warn] matplotlib not available, skipping plots')                # 画图而已
         return
 
     plot_dir = output_dir / 'plots'
@@ -548,7 +592,13 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
 
     print(f'  Plots saved to {plot_dir}/')
 
-
+# 核心痛点：30% 的数据不够，70% 的数据有毒
+# 破局之法：$k$-Fold（交叉验证）的终极骗术
+# 它的核心逻辑如下：
+# 切五等份 (n_folds=5)：把所有的物理事件均匀地分成 5 份（A, B, C, D, E），并且依然使用了 StratifiedKFold 保证每份里信号和背景的比例完美一致。
+# 第一轮轮换：用 A、B、C、D 这 80% 的数据训练出一个“克隆体 AI”，然后让它去考 E 这 20% 的试卷，并记录下 E 的得分。
+# 第二轮轮换：扔掉上一个 AI。用 A、B、C、E 训练出一个全新的 AI，让它去考 D 这 20% 的试卷，记录下 D 的得分。
+# 以此类推... 循环 5 次
 def kfold_score_all(X, y, w_phys, w_norm, full_df, best_params, n_folds=5, random_state=42, n_jobs=8):
     """Score ALL events using k-fold cross-validation.
 
@@ -586,7 +636,11 @@ def kfold_score_all(X, y, w_phys, w_norm, full_df, best_params, n_folds=5, rando
         'sample_name': full_df['sample_name'].to_numpy(),
     })
     return kfold_df, overall_auc
-
+# 最后返回的这个 kfold_df，就是你整个物理分析流水线产出的终极核武器。它包含了：
+# y_true：绝对真理（它到底是信号还是背景）。
+# phys_weight：物理重量（它在大自然里到底算几次对撞）。
+# bdt_score：AI 给出的一视同仁的打分。
+# sample_name：它的老家（具体的物理背景类型）。
 
 def main():
     args = parse_args()
@@ -622,7 +676,7 @@ def main():
 
     # Fix sentinel values: missingMass uses -999 for undefined cases
     if 'missingMass' in X.columns:
-        n_sentinel = (X['missingMass'] < -900).sum()
+        n_sentinel = (X['missingMass'] < -900).sum()                                            # 把信号和背景文件读进来拼成一个大表 full_df
         if n_sentinel > 0:
             print(f'[fix] Replacing {n_sentinel} missingMass sentinel values (-999) with 0')
             X.loc[X['missingMass'] < -900, 'missingMass'] = 0.0
@@ -638,7 +692,7 @@ def main():
     # Normalize class weights for balanced learning (ML review item 4)
     w_normalized = normalize_class_weights(w, y)
 
-    # Single index-based split to guarantee consistency across all arrays
+    # Single index-based split to guarantee consistency across all arrays                 # 黄金一刀：在这里干净利落地切出了那 30% 绝对不能碰的“终极考卷”（idx_test）
     indices = np.arange(len(X))
     idx_train, idx_test = train_test_split(
         indices, test_size=args.test_size,
@@ -653,7 +707,7 @@ def main():
     # Hyperparameter search
     if not args.no_grid_search:
         best_params, grid_results = grid_search(
-            X_train, y_train, w_train, args.random_state, args.n_jobs
+            X_train, y_train, w_train, args.random_state, args.n_jobs                    # 启动咱们之前聊过的那 108 个克隆人的角斗场
         )
         # Save grid search results
         pd.DataFrame(grid_results).to_csv(
@@ -670,7 +724,9 @@ def main():
     # The test sample is kept untouched for the performance report.
     print(f'\n=== Training Final Model ===')
     print(f'  Params: {best_params}')
-    model, best_iteration, final_n_estimators, val_auc, training_history = fit_with_early_stopping(
+    
+    # 拿到最强参数后，调用那个带“随堂模拟考”的函数，用 70% 的训练集，正式训练出最终的王牌 AI 模型
+    model, best_iteration, final_n_estimators, val_auc, training_history = fit_with_early_stopping(    
         X_train, y_train, w_train, best_params,
         random_state=args.random_state,
         n_jobs=args.n_jobs,
@@ -704,6 +760,10 @@ def main():
     print(f'  Test AUC:  {test_auc:.4f}')
     print(f'  |delta AUC|:    {abs(train_auc - test_auc):.4f}')
     print(f'  Weighted chi2/ndf (signal):     {ks_sig_chi2:.2f}, p={ks_sig_p:.4f}')
+    
+    # 召唤咱们最开始看的那个严苛的“加权 KS 质检员”。
+    # 最终判定 AI 是否过拟合的测谎仪，用的是“考分差距（Delta AUC）是否大于 2%”，以及“KS 统计量是否大于 0.05”。如果超标，终端里会直接红字亮起 WARNING!
+    
     print(f'  Weighted chi2/ndf (background): {ks_bkg_chi2:.2f}, p={ks_bkg_p:.4f}')
     print(f'  Unweighted KS (signal):     stat={ks_sig_uw.statistic:.4f}, p={ks_sig_uw.pvalue:.4f}')
     print(f'  Unweighted KS (background): stat={ks_bkg_uw.statistic:.4f}, p={ks_bkg_uw.pvalue:.4f}')
@@ -748,7 +808,7 @@ def main():
         'validation_fraction': 0.20,
     }
 
-    model_path = output_dir / 'xgboost_bdt.json'
+    model_path = output_dir / 'xgboost_bdt.json'           # 把模型、所有的测试参数、特征重要性，全部保存成 JSON 和 CSV 文件，这是模型本体！！！！！！它包含了成百上千棵树的结构
     model.save_model(model_path)
 
     with open(output_dir / 'training_metrics.json', 'w') as handle:
@@ -760,7 +820,7 @@ def main():
             json.dump(serializable_history, handle, indent=2)
 
     importance = pd.Series(
-        model.feature_importances_, index=available_features
+        model.feature_importances_, index=available_features            # 这是“功劳簿”。它记录了哪个物理变量（比如 $m_{recoil}$）对分类贡献最大
     ).sort_values(ascending=False)
     importance.to_csv(output_dir / 'feature_importance.csv', header=['importance'])
 
@@ -778,7 +838,7 @@ def main():
                    w_phys_train, w_phys_test, model, available_features,
                    full_df_test=full_df_test)
 
-    # K-fold cross-validation scoring (all events get unbiased scores)
+    # K-fold cross-validation scoring (all events get unbiased scores)            # 如果你在启动程序时开了这个开关，它会额外花好几倍的时间，通过交叉验证给所有原始数据（不只是 30% 测试集）打上完全公正的分数，并存为 kfold_scores.csv
     if args.kfold > 0:
         kfold_df, kfold_auc = kfold_score_all(
             X, y, w, w_normalized, full_df, best_params,
