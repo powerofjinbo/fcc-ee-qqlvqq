@@ -58,8 +58,12 @@ def build_templates(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
     if bdt_cut is not None:
         df = df[df["bdt_score"] >= bdt_cut].copy()
 
-    bins = np.linspace(score_range[0], score_range[1], nbins + 1)
+    bins = np.linspace(score_range[0], score_range[1], nbins + 1)            
 
+  
+  # 我们的物理事件是带着不同权重（phys_weight）的！
+  # 以代码里先用 phys_weight  2 算了一遍直方图（sig_w2），然后再开根号得到真实的误差 sig_err。
+  # 这保证了后续放入 pyhf 时，模型知道哪个格子的数据是“实打实”的，哪个格子是“虚胖（高权重导致的偶然波动）
     # Signal template (with MC stat errors)
     sig_mask = df["y_true"] == 1
     sig_hist, _ = np.histogram(
@@ -78,7 +82,7 @@ def build_templates(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
     bkg_groups = {
         "WW": ["p8_ee_WW_ecm240"],
         "ZZ": ["p8_ee_ZZ_ecm240"],
-        "qq": [s for s in BACKGROUND_SAMPLES if s.startswith("wz3p6_ee_") and "tautau" not in s],
+        "qq": [s for s in BACKGROUND_SAMPLES if s.startswith("wz3p6_ee_") and "tautau" not in s],    # 背景家族大分家
         "tautau": ["wz3p6_ee_tautau_ecm240"],
         "ZH_other": [
             s for s in BACKGROUND_SAMPLES
@@ -130,6 +134,9 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
     samples = []
 
     # Signal sample with MC stat uncertainty
+
+  
+    # 在这份契约里，信号（Signal）被赋予了一个极其特殊的属性：mu (信号强度 $\mu$)。这就是你整个实验、砸了几百亿建对撞机想要找的那个终极答案！
     sig_modifiers = [
         {"name": "mu", "type": "normfactor", "data": None},
     ]
@@ -142,7 +149,7 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
     })
 
     # Background samples with normalization + MC stat systematics
-    for group_name, hist in bkg_hists.items():
+    for group_name, hist in bkg_hists.items():                                    
         hist = np.maximum(hist, 1e-6)
         err = np.maximum(bkg_errs.get(group_name, np.zeros_like(hist)), 1e-6)
         modifiers = [
@@ -152,6 +159,10 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
                 "data": {"hi": 1.0 + norm_uncertainty, "lo": 1.0 - norm_uncertainty},
             },
         ]
+
+      
+      # type: "staterror" 就是在告诉模型：“由于我的模拟数据是在超级计算机里用蒙特卡洛投骰子投出来的，它本身就带有随机波动的误差。
+      # 请你在做最终判定的时候，把这种‘骰子带来的不确定性’也算进总误差里！”
         if use_staterror:
             modifiers.append({"name": f"staterror_{group_name}", "type": "staterror", "data": err.tolist()})
         samples.append({
@@ -189,7 +200,7 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
 
     return spec
 
-
+# 我们把这份完美数据喂给模型，算出来的 $\mu$ 必然等于 $1.0$。但我们真正在乎的不是 $\mu$，而是此时模型给出的误差范围（$\sigma$）！这就是我们这个实验的“预期敏感度（Expected Sensitivity）”。
 def fit_asimov(spec, sig_hist, bkg_hists):
     """Run Asimov fit: generate expected data at mu=1 and fit."""
     import pyhf
@@ -204,7 +215,8 @@ def fit_asimov(spec, sig_hist, bkg_hists):
     ws = pyhf.Workspace(spec)
     model = ws.model()
     data = total.tolist() + model.config.auxdata
-
+  # 这里启动了 pyhf 的核心优化器。它在玩一个高维度的“下山游戏”：调整所有的参数（信号强度、背景的上下浮动、各种误差），试图找到一个点，使得负对数似然函数（Negative Log-Likelihood, NLL）的值最小。
+  # 因为我们喂的是完美阿西莫夫数据，所以它找到的 bestfit 里，信号强度 $\mu$ 肯定稳稳地停在 1.0 附近。
     # MLE fit
     bestfit, twice_nll_val = pyhf.infer.mle.fit(
         data, model, return_fitted_val=True
@@ -244,6 +256,9 @@ def fit_asimov(spec, sig_hist, bkg_hists):
     except np.linalg.LinAlgError:
         errors = np.zeros(n)
 
+
+  # 提取终极大奖
+  # 给出了 FCC-ee 这台对撞机对测量希格斯粒子信号的理论极限误差 (mu_err)。
     mu_idx = model.config.poi_index
     mu_hat = float(bestfit[mu_idx])
     mu_err = float(errors[mu_idx])
