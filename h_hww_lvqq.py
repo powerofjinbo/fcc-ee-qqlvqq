@@ -201,47 +201,67 @@ def build_graph_lvqq(df, dataset):
     # New features from autonomous exploration
     # Jet merging variables (Durham kT distance when going from n+1 to n jets)
     # 从之前那台“破壁机”(clustered_jets) 的历史记录里，提取出喷注从 4 个合并成 3 个时的距离参数 d_34，以及从 3 个合并成 2 个时的距离参数 d_23。（虽然应该说是能量参数）
+    # 如果 d_34 很小，且 d_23 也很小，模型：“这绝对是个 qq 或 WW 背景，带着俩软胶子，砍掉！”
+    # 如果 d_34 很大，且 d_23 也极大，模型：“四个极其坚挺的硬核，完美的 ZH 信号，保留！
     df = df.Define("d_23", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 2)")
     df = df.Define("d_34", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 3)")
 
+    # 这里没有任何悬念了！这就是你的 Python 前台在呼叫你刚刚在 utils.h 里亲手清理和确认过的那三个 C++ 辅助函数。算出了 4 喷注总质量、事件推力（形状）以及轻子-中微子夹角
+    # 这些统统都会作为输入特征喂给后续的 BDT 模型
     df = df.Define("totalJetMass", "FCCAnalyses::totalJetMass(jets_tlv)")
     df = df.Define("thrust", "FCCAnalyses::computeThrust(rps_no_leptons)")
     df = df.Define("angleLepMiss", "FCCAnalyses::angleLeptonMiss(leptons_p20, missingEnergy_rp)")
-
+    
+    # 人为凭空构造一个四维动量 init_tlv，它的动量是 (0, 0, 0)，能量是 240
+    # 正负电子对撞机的最大优势就在于：“我们一开始就知道总能量和总动量！” 电子和正电子迎面撞击，总动量抵消为 0，总能量就是 240 GeV。这是我们做精确测量的绝对基石
     df = df.Define("init_tlv", "TLorentzVector ret; ret.SetPxPyPzE(0,0,0,ecm); return ret;")
-    df = df.Define("recoil_tlv", "init_tlv - Zcand")
-    df = df.Define("recoil_m", "recoil_tlv.M()")
-    df = df.Define("recoil_dmH", "abs(recoil_m - 125.0)")
-    hists.append(df.Histo1D(("recoil_m", "", *bins_recoil), "recoil_m"))
-
+    # 用总动量 init_tlv，直接减去前面拼出来的 Z 玻色子动量 Zcand，得到一个神秘的剩余动量 recoil_tlv
+    # 这就是动量守恒定律！发生的是 ee to ZH反应。如果你已经抓住了Z，那么剩下的东西不管它跑到哪里去了，不管它衰变成了多复杂的东西（甚至是看不见的暗物质），它必定就是希格斯玻色子 (Higgs) 的动量！
+    df = df.Define("recoil_tlv", "init_tlv - Zcand") 
+    
+    df = df.Define("recoil_m", "recoil_tlv.M()")     # 反冲系统”的不变质量 recoil_m
+    df = df.Define("recoil_dmH", "abs(recoil_m - 125.0)") # 计算它和标准希格斯质量 (125 GeV) 的差值 recoil_dmH，最后把 recoil_m 画成直方图！
+    hists.append(df.Histo1D(("recoil_m", "", *bins_recoil), "recoil_m")) # 画图！
+    
+    # 提取你事件里那个动量大于 20 GeV 的孤立轻子（leptons_p20[0]）的 x, y, z 动量和能量，打包成标准的四维动量对象 lepton_tlv
     df = df.Define(
         "lepton_tlv",
         "TLorentzVector v; v.SetPxPyPzE(leptons_p20[0].momentum.x, leptons_p20[0].momentum.y, leptons_p20[0].momentum.z, leptons_p20[0].energy); return v;",
     )
+
+    # 把探测器里记录的“缺失能量”（missingEnergy_rp）同样打包成四维动量 nu_tlv
     df = df.Define(
         "nu_tlv",
         "TLorentzVector v; v.SetPxPyPzE(missingEnergy_rp[0].momentum.x, missingEnergy_rp[0].momentum.y, missingEnergy_rp[0].momentum.z, missingEnergy_rp[0].energy); return v;",
     )
+
+    # 把轻子和中微子的四维动量加在一起，命名为 Wlep，然后计算它的质量并画图
     df = df.Define("Wlep", "lepton_tlv + nu_tlv")
     df = df.Define("Wlep_m", "Wlep.M()")
     hists.append(df.Histo1D(("Wlep_m", "", *bins_m), "Wlep_m"))
 
+    # 全场最震撼的一行加法！把刚刚算出来的真实 W（Wlep），加上你很早之前在 C++ 引擎里用两个剩余喷注强行凑出来的那个虚 W（Wstar），合并成最终的希格斯候选者 Hcand。算出它的总质量，并画图保存！
     df = df.Define("Hcand", "Wlep + Wstar")
     df = df.Define("Hcand_m", "Hcand.M()")
     hists.append(df.Histo1D(("Hcand_m", "", *bins_m), "Hcand_m"))
 
     # cut6: Z mass window
+    # 下达过滤指令：要求刚刚拼出来的Z候选者质量（Zcand_m）与标准值91.19的误差绝对值必须小于15。符合要求的放行，不符合的直接砍掉！同时在 CutFlow 柱状图上记下一笔
     df = df.Filter("abs(Zcand_m - 91.19) < 15")
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut6"))
     hists.append(df.Histo1D(("Hcand_m_afterZ", "", *bins_m), "Hcand_m"))
     hists.append(df.Histo1D(("recoil_m_afterZ", "", *bins_recoil), "recoil_m"))
 
     # cut7: recoil window
+    # 最后一道防线！利用计算出的反冲质量（recoil_m），要求它距离标准希格斯质量125的误差不能超过20（也就是保留105 - 145的区间）
     df = df.Filter("abs(recoil_m - 125) < 20")
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut7"))
     hists.append(df.Histo1D(("Hcand_m_final", "", *bins_m), "Hcand_m"))
 
-    return hists, weightsum, df
+    # 在经历了九九八十一难、跨过了全部 7 道 Cut 之后，画出最后幸存者们重构出的希格斯质量分布图 Hcand_m_final。物理意义：这就是你这张物理彩票的最终大奖！
+    # 此时留下的事件纯度极高。你亲自用碎片拼出来的这个分布图，将在 125 GeV 处呈现出一个完美的共振峰。这就是你向全世界宣布“我找到了H to WW的铁证！
+
+    return hists, weightsum, df         # 满载而归，打包交差
 
 
 if treemaker:
