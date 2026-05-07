@@ -4,11 +4,12 @@ Plotting script for H->WW->lvqq analysis
 Produces paper-style plots with stacked backgrounds and signal overlay
 """
 
-import ROOT
 import os
 import sys
+import math
+import ROOT
 
-from ml_config import SIGNAL_SAMPLES, ZH_OTHER_SAMPLES
+from ml_config import DEFAULT_HISTMAKER_DIR, DEFAULT_PLOTS_DIR, SIGNAL_SAMPLES, ZH_OTHER_SAMPLES
 
 # Suppress ROOT info messages
 ROOT.gROOT.SetBatch(True)
@@ -18,8 +19,8 @@ ROOT.gErrorIgnoreLevel = ROOT.kWarning
 # Configuration
 # ============================================================
 
-inputDir = "output/h_hww_lvqq/histmaker/ecm240/"
-outputDir = "plots_lvqq/"
+inputDir = DEFAULT_HISTMAKER_DIR + "/"
+outputDir = DEFAULT_PLOTS_DIR + "/"
 
 # Integrated luminosity (pb^-1)
 intLumi = 10.8e6  # 10.8 ab^-1 at 240 GeV
@@ -56,39 +57,286 @@ processes = [
 
 # Histograms to plot: (name, xtitle, rebin, xmin, xmax, logy)
 histograms = [
-    ("cutFlow", "Cut stage", 1, -0.5, 8.5, True),
+    ("cutFlow", "Cut stage", 1, -0.5, 10.5, True),
+    ("n_leptons_p10_p60", "Number of leptons with 10 < p < 60 GeV", 1, -0.5, 5.5, True),
     ("lepton_p", "Lepton momentum [GeV]", 4, 0, 150, False),
+    ("lepton_p_after_cut1", "Lepton momentum after Cut 1 [GeV]", 4, 0, 150, False),
     ("lepton_iso", "Lepton isolation", 2, 0, 1, False),
+    ("lepton_iso_after_cut1", "Lepton isolation after Cut 1", 2, 0, 1, False),
+    ("n_iso_leptons_p10", "Number of isolated leptons with p > 10 GeV", 1, -0.5, 5.5, True),
+    ("n_iso_leptons_p10_after_cut1", "Isolated leptons with p > 10 GeV after Cut 1", 1, -0.5, 5.5, True),
+    ("n_iso_leptons_p10_after_cut2", "Isolated leptons with p > 10 GeV after Cut 2", 1, -0.5, 5.5, True),
+    ("n_extra_iso_leptons_p20", "Additional isolated leptons with p > 20 GeV", 1, -0.5, 5.5, True),
+    ("n_extra_iso_leptons_p20_after_cut1", "Additional isolated leptons with p > 20 GeV after Cut 1", 1, -0.5, 5.5, True),
     ("missingEnergy_e", "Missing energy [GeV]", 4, 0, 150, False),
+    ("missingEnergy_e_after_cut2", "Missing energy after Cut 2 [GeV]", 4, 0, 150, False),
+    ("missingEnergy_e_after_cut3", "Missing energy after Cut 3 [GeV]", 4, 0, 150, False),
     ("missingEnergy_p", "Missing momentum [GeV]", 4, 0, 150, False),
+    ("missingEnergy_p_after_cut2", "Missing momentum after Cut 2 [GeV]", 4, 0, 150, False),
+    ("missingEnergy_p_after_cut3", "Missing momentum after Cut 3 [GeV]", 4, 0, 150, False),
     ("missingMass", "Missing mass [GeV]", 4, 0, 240, False),
+    ("missingMass_after_cut2", "Missing mass after Cut 2 [GeV]", 4, 0, 240, False),
+    ("missingMass_after_cut3", "Missing mass after Cut 3 [GeV]", 4, 0, 240, False),
     ("cosTheta_miss", "|cos(#theta_{miss})|", 1, 0, 1, False),
+    ("cosTheta_miss_after_cut2", "|cos(#theta_{miss})| after Cut 2", 1, 0, 1, False),
+    ("cosTheta_miss_after_cut3", "|cos(#theta_{miss})| after Cut 3", 1, 0, 1, False),
     ("visibleEnergy", "Visible energy (no lepton) [GeV]", 4, 0, 250, False),
     ("njets", "Number of jets", 1, 0, 10, True),
     ("jet0_p", "Jet 0 momentum [GeV]", 4, 0, 120, False),
     ("jet1_p", "Jet 1 momentum [GeV]", 4, 0, 120, False),
     ("jet2_p", "Jet 2 momentum [GeV]", 4, 0, 120, False),
     ("jet3_p", "Jet 3 momentum [GeV]", 4, 0, 120, False),
+    ("min_jet_p", "Minimum jet momentum [GeV]", 4, 0, 80, False),
+    ("jet0_nconst", "Jet 0 constituent multiplicity", 1, 0, 60, False),
+    ("jet1_nconst", "Jet 1 constituent multiplicity", 1, 0, 60, False),
+    ("jet2_nconst", "Jet 2 constituent multiplicity", 1, 0, 60, False),
+    ("jet3_nconst", "Jet 3 constituent multiplicity", 1, 0, 60, False),
+    ("min_jet_nconst", "Minimum jet constituent multiplicity", 1, 0, 60, False),
+    ("mean_jet_nconst", "Mean jet constituent multiplicity", 1, 0, 60, False),
+    ("min_jet_nconst_after_cut5", "Minimum jet constituent multiplicity after Cut 5", 1, 0, 60, False),
+    ("mean_jet_nconst_after_cut6", "Mean jet constituent multiplicity after Cut 6", 1, 0, 60, False),
+    ("sqrt_d23", "#sqrt{d_{23}} [GeV]", 4, 0, 120, False),
+    ("sqrt_d34", "#sqrt{d_{34}} [GeV]", 2, 0, 40, False),
     ("Zcand_m", "m_{Z cand} [GeV]", 4, 0, 200, False),
+    ("Zcand_p", "p_{Z cand} [GeV]", 4, 0, 120, False),
+    ("Zcand_p_afterZ", "p_{Z cand} after Z cut [GeV]", 4, 0, 120, False),
     ("Wstar_m", "m_{W*} [GeV]", 4, 0, 150, False),  # W* is off-shell, expect ~40 GeV
+    ("deltaR_Wstar", "#DeltaR_{jj}^{W*}", 2, 0, 5, False),
+    ("angle_Wstar_jj", "Opening angle of W* jets [rad]", 2, 0, 3.2, False),
     ("Wlep_m", "m_{W_{lep}} [GeV]", 4, 0, 200, False),
     ("Hcand_m", "m_{H cand} [GeV]", 4, 0, 300, False),
-    ("Hcand_m_afterZ", "m_{H cand} (after Z cut) [GeV]", 4, 0, 300, False),
+    ("Hcand_m_afterZp", "m_{H cand} (after Z mass and p cuts) [GeV]", 4, 0, 300, False),
+    ("Hcand_m_afterH", "m_{H cand} (after H cut) [GeV]", 4, 0, 300, False),
     ("Hcand_m_final", "m_{H cand} (final) [GeV]", 4, 0, 300, False),
     ("recoil_m", "Recoil mass [GeV]", 4, 50, 200, False),
-    ("recoil_m_afterZ", "Recoil mass (after Z cut) [GeV]", 4, 50, 200, False),
+    ("recoil_m_afterZp", "Recoil mass (after Z mass and p cuts) [GeV]", 4, 50, 200, False),
+    ("recoil_m_afterH", "Recoil mass (after H cut) [GeV]", 4, 50, 200, False),
     ("deltaZ", "|m_{jj} - m_{Z}| [GeV]", 4, 0, 50, False),
+]
+
+CUT_DIAGNOSTICS = [
+    {
+        "name": "cut1_lepton_candidate",
+        "hist": "n_leptons_p10_p60",
+        "xtitle": "Number of leptons with 10 < p < 60 GeV",
+        "rebin": 1,
+        "xmin": -0.5,
+        "xmax": 5.5,
+        "logy": True,
+        "kind": "gt",
+        "value": 0.5,
+        "label": "Cut 1: require a lepton candidate with 10 < p < 60 GeV",
+    },
+    {
+        "name": "cut2_lepton_isolation",
+        "hist": "lepton_iso",
+        "xtitle": "Lepton isolation",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 1.0,
+        "logy": False,
+        "kind": "lt",
+        "value": 0.20,
+        "label": "Cut 2: require selected-lepton isolation < 0.20",
+    },
+    {
+        "name": "cut3_extra_lepton_veto",
+        "hist": "n_extra_iso_leptons_p20",
+        "xtitle": "Number of additional isolated leptons with p > 20 GeV",
+        "rebin": 1,
+        "xmin": -0.5,
+        "xmax": 5.5,
+        "logy": True,
+        "kind": "eq_bin",
+        "value": 0,
+        "label": "Cut 3: veto additional isolated leptons above 20 GeV",
+    },
+    {
+        "name": "cut4_missing_energy_window",
+        "hist": "missingEnergy_e_after_cut3",
+        "xtitle": "Missing energy after Cut 3 [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 150.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 10.0,
+        "hi": 55.0,
+        "label": "Cut 4: require 10 < E_{miss} < 55 GeV",
+    },
+    {
+        "name": "cut5_four_jet_reconstruction",
+        "hist": "njets",
+        "xtitle": "Number of jets",
+        "rebin": 1,
+        "xmin": 0.0,
+        "xmax": 8.0,
+        "logy": True,
+        "kind": "eq_bin",
+        "value": 4,
+        "label": "Cut 5a: exclusive N=4 Durham reconstruction sanity check",
+        "legend": (0.66, 0.62, 0.92, 0.88),
+        "legend_text_size": 0.026,
+    },
+    {
+        "name": "cut5_sqrt_d34_topology",
+        "hist": "sqrt_d34",
+        "xtitle": "#sqrt{d_{34}} [GeV]",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 40.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 14.0,
+        "label": "Cut 5b: require #sqrt{d_{34}} > 14 GeV",
+    },
+    {
+        "name": "cut6_min_jet_nconst_topology",
+        "hist": "min_jet_nconst_after_cut5",
+        "xtitle": "Minimum jet constituent multiplicity",
+        "rebin": 1,
+        "xmin": 0.0,
+        "xmax": 60.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 8.0,
+        "label": "Cut 6: require minimum jet constituents > 8",
+    },
+    {
+        "name": "cut6_mean_jet_nconst_topology",
+        "hist": "mean_jet_nconst_after_cut6",
+        "xtitle": "Mean jet constituent multiplicity",
+        "rebin": 1,
+        "xmin": 0.0,
+        "xmax": 60.0,
+        "logy": False,
+        "kind": "none",
+        "label": "Topology diagnostic: mean jet constituents is not used as a hard cut",
+    },
+    {
+        "name": "cut5_sqrt_d23_topology",
+        "hist": "sqrt_d23",
+        "xtitle": "#sqrt{d_{23}} [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 120.0,
+        "logy": False,
+        "kind": "none",
+        "label": "Topology diagnostic: #sqrt{d_{23}} is not used as a hard cut",
+    },
+    {
+        "name": "cut5_min_jet_nconst_topology",
+        "hist": "min_jet_nconst",
+        "xtitle": "Minimum jet constituent multiplicity",
+        "rebin": 1,
+        "xmin": 0.0,
+        "xmax": 60.0,
+        "logy": False,
+        "kind": "none",
+        "label": "Cut 5 candidate: reject tau-like low-multiplicity jets",
+    },
+    {
+        "name": "cut5_min_jet_p_topology",
+        "hist": "min_jet_p",
+        "xtitle": "Minimum jet momentum [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 80.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 5.0,
+        "label": "Cut 5 candidate: reject soft forced jets",
+    },
+    {
+        "name": "cut5_wstar_mass_topology",
+        "hist": "Wstar_m",
+        "xtitle": "m_{W*} [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 150.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 15.0,
+        "label": "Cut 5 candidate: require a resolved off-shell W* pair",
+    },
+    {
+        "name": "cut5_deltaR_wstar_topology",
+        "hist": "deltaR_Wstar",
+        "xtitle": "#DeltaR_{jj}^{W*}",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 5.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 0.4,
+        "label": "Cut 5 candidate: W* two-prong separation",
+    },
+    {
+        "name": "cut7_z_mass_window",
+        "hist": "Zcand_m",
+        "xtitle": "m_{Z cand} [GeV]",
+        "rebin": 4,
+        "xmin": 40.0,
+        "xmax": 150.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 85.0,
+        "hi": 95.0,
+        "label": "Cut 7: require 85 < m_{Z,cand} < 95 GeV",
+    },
+    {
+        "name": "cut8_zcand_p_recoil_kinematics",
+        "hist": "Zcand_p_afterZ",
+        "xtitle": "p_{Z cand} [GeV]",
+        "rebin": 4,
+        "xmin": 0.0,
+        "xmax": 120.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 40.0,
+        "hi": 60.0,
+        "label": "Cut 8: require 40 < p_{Z,cand} < 60 GeV",
+    },
+    {
+        "name": "cut9_hcand_mass_window",
+        "hist": "Hcand_m_afterZp",
+        "xtitle": "m_{H cand} after Z mass and p cuts [GeV]",
+        "rebin": 4,
+        "xmin": 50.0,
+        "xmax": 220.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 120.0,
+        "hi": 135.0,
+        "label": "Cut 9: require 120 < m_{H,cand} < 135 GeV",
+    },
+    {
+        "name": "cut10_recoil_window",
+        "hist": "recoil_m_afterH",
+        "xtitle": "Recoil mass (after H cut) [GeV]",
+        "rebin": 4,
+        "xmin": 50.0,
+        "xmax": 200.0,
+        "logy": False,
+        "kind": "window",
+        "lo": 120.0,
+        "hi": 135.0,
+        "label": "Cut 10: require 120 < m_{recoil} < 135 GeV",
+    },
 ]
 
 CUT_LABELS = [
     "All",
-    "1lep p>20",
+    "1lep 10<p<60",
     "ISO",
-    "Veto p>5",
-    "MET E>20",
-    "4jets",
-    "Z win",
-    "Recoil",
+    "Veto extra iso p>20",
+    "10<E_{miss}<55",
+    "N=4+sqrt(d34)>14",
+    "minNconst>8",
+    "85<mZ<95",
+    "40<pZ<60",
+    "120<mHcand<135",
+    "120<recoil<135",
 ]
 CUT_IDS = [f"cut{i}" for i in range(len(CUT_LABELS))]
 PERCENT_COL_WIDTH = 12
@@ -158,6 +406,279 @@ def getHist(filename, histname):
     # normalized to xsec * intLumi. Do NOT scale again here!
 
     return h
+
+
+def _nice_scale_factor(raw_scale):
+    """Round a signal scale factor to a readable 1/2/5 x 10^n value."""
+    if raw_scale <= 1:
+        return 1
+    exponent = math.floor(math.log10(raw_scale))
+    base = 10 ** exponent
+    for multiplier in (1, 2, 5, 10):
+        candidate = multiplier * base
+        if raw_scale <= candidate:
+            return int(candidate)
+    return int(10 * base)
+
+
+def _draw_cut_guides(config, ymin, ymax):
+    """Draw cut threshold/window guides on the active pad."""
+    line_color = ROOT.kGray + 2
+    lines = []
+    labels = []
+
+    def _make_line(x):
+        line = ROOT.TLine(x, ymin, x, ymax)
+        line.SetLineColor(line_color)
+        line.SetLineStyle(7)
+        line.SetLineWidth(3)
+        line.Draw()
+        lines.append(line)
+
+    kind = config["kind"]
+    if kind == "lt":
+        _make_line(config["value"])
+    elif kind == "gt":
+        _make_line(config["value"])
+    elif kind == "window":
+        _make_line(config["lo"])
+        _make_line(config["hi"])
+    elif kind == "eq_bin":
+        center = config["value"]
+        _make_line(center - 0.5)
+        _make_line(center + 0.5)
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.030)
+    latex.SetTextColor(line_color)
+    latex.DrawLatex(0.15, 0.82, config["label"])
+    labels.append(latex)
+    return lines, labels
+
+
+def makeCutDiagnosticPlot(config):
+    """Create one plot per analysis cut with the corresponding cut guide."""
+
+    histname = config["hist"]
+    xtitle = config["xtitle"]
+    rebin = config["rebin"]
+    xmin = config["xmin"]
+    xmax = config["xmax"]
+    logy = config["logy"]
+
+    c = ROOT.TCanvas(f"c_{config['name']}", "", 850, 700)
+    c.cd()
+    if logy:
+        c.SetLogy()
+
+    bkg_hists = []
+    sig_hists = []
+    for fname, label, color, isSignal in processes:
+        h = getHist(fname, histname)
+        if h is None:
+            continue
+
+        if rebin > 1:
+            h.Rebin(rebin)
+
+        h.SetLineColor(color)
+        h.SetLineWidth(2)
+        if isSignal:
+            h.SetFillStyle(0)
+            sig_hists.append((h, label, color))
+        else:
+            h.SetFillColor(color)
+            h.SetFillStyle(1001)
+            bkg_hists.append((h, label, color))
+
+    if not bkg_hists and not sig_hists:
+        print(f"Warning: No histograms found for {histname}")
+        return
+
+    hs = ROOT.THStack(f"hs_{config['name']}", "")
+    for h, _, _ in bkg_hists:
+        hs.Add(h)
+
+    h_sig_sum = None
+    for h, _, _ in sig_hists:
+        if h_sig_sum is None:
+            h_sig_sum = h.Clone(f"h_sig_sum_{config['name']}")
+            h_sig_sum.SetDirectory(0)
+        else:
+            h_sig_sum.Add(h)
+
+    bkg_max = hs.GetMaximum() if hs.GetNhists() > 0 else 0.0
+    sig_max = h_sig_sum.GetMaximum() if h_sig_sum else 0.0
+    signal_scale = 1
+    if h_sig_sum and sig_max > 0 and bkg_max > 0:
+        signal_scale = _nice_scale_factor(0.25 * bkg_max / sig_max)
+        if signal_scale > 1:
+            h_sig_sum.Scale(signal_scale)
+
+    if h_sig_sum:
+        h_sig_sum.SetLineColor(ROOT.kRed + 1)
+        h_sig_sum.SetLineWidth(3)
+        h_sig_sum.SetFillStyle(0)
+
+    ymax = max(bkg_max, h_sig_sum.GetMaximum() if h_sig_sum else 0.0)
+    if logy:
+        ymin = 0.1
+        ymax *= 80
+    else:
+        ymin = 0.0
+        ymax *= 1.55
+
+    if hs.GetNhists() > 0:
+        hs.Draw("HIST")
+        hs.GetXaxis().SetTitle(xtitle)
+        hs.GetYaxis().SetTitle("Events")
+        hs.GetXaxis().SetRangeUser(xmin, xmax)
+        hs.SetMinimum(ymin)
+        hs.SetMaximum(ymax)
+        hs.GetXaxis().SetTitleSize(0.045)
+        hs.GetYaxis().SetTitleSize(0.045)
+        hs.GetXaxis().SetLabelSize(0.04)
+        hs.GetYaxis().SetLabelSize(0.04)
+        hs.GetYaxis().SetTitleOffset(1.3)
+
+    if h_sig_sum:
+        h_sig_sum.Draw("HIST SAME")
+
+    guide_lines, guide_labels = _draw_cut_guides(config, ymin, ymax)
+
+    legend_coords = config.get("legend", (0.56, 0.58, 0.92, 0.88))
+    leg = ROOT.TLegend(*legend_coords)
+    leg.SetTextSize(config.get("legend_text_size", 0.031))
+    if h_sig_sum:
+        sig_label = "Signal (ZH, H#rightarrowWW)"
+        if signal_scale > 1:
+            sig_label += f" #times {signal_scale}"
+        leg.AddEntry(h_sig_sum, sig_label, "l")
+    for h, label, _ in reversed(bkg_hists):
+        leg.AddEntry(h, label, "f")
+    leg.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.14, 0.93, "#bf{FCC-ee} #it{Simulation}")
+    latex.SetTextSize(0.035)
+    latex.DrawLatex(0.66, 0.93, "#sqrt{s} = 240 GeV, 10.8 ab^{-1}")
+
+    outdir = os.path.join(outputDir, "cut_diagnostics")
+    os.makedirs(outdir, exist_ok=True)
+    c.SaveAs(os.path.join(outdir, f"{config['name']}.pdf"))
+    c.SaveAs(os.path.join(outdir, f"{config['name']}.png"))
+    c.Close()
+
+
+def makeNormalizedCutDiagnosticPlot(config):
+    """Create normalized signal/background shape plot for the cut variable."""
+
+    histname = config["hist"]
+    xtitle = config["xtitle"]
+    rebin = config["rebin"]
+    xmin = config["xmin"]
+    xmax = config["xmax"]
+    logy = config["logy"]
+
+    c = ROOT.TCanvas(f"c_norm_{config['name']}", "", 850, 700)
+    c.cd()
+    if logy:
+        c.SetLogy()
+
+    h_bkg_sum = None
+    h_sig_sum = None
+    for fname, label, color, isSignal in processes:
+        h = getHist(fname, histname)
+        if h is None:
+            continue
+        if rebin > 1:
+            h.Rebin(rebin)
+        if isSignal:
+            if h_sig_sum is None:
+                h_sig_sum = h.Clone(f"h_sig_norm_{config['name']}")
+                h_sig_sum.SetDirectory(0)
+            else:
+                h_sig_sum.Add(h)
+        else:
+            if h_bkg_sum is None:
+                h_bkg_sum = h.Clone(f"h_bkg_norm_{config['name']}")
+                h_bkg_sum.SetDirectory(0)
+            else:
+                h_bkg_sum.Add(h)
+
+    if h_bkg_sum is None and h_sig_sum is None:
+        print(f"Warning: No histograms found for {histname}")
+        return
+
+    if h_bkg_sum and h_bkg_sum.Integral() > 0:
+        h_bkg_sum.Scale(1.0 / h_bkg_sum.Integral())
+        h_bkg_sum.SetFillColor(ROOT.kAzure + 1)
+        h_bkg_sum.SetFillStyle(3004)
+        h_bkg_sum.SetLineColor(ROOT.kAzure + 1)
+        h_bkg_sum.SetLineWidth(2)
+    if h_sig_sum and h_sig_sum.Integral() > 0:
+        h_sig_sum.Scale(1.0 / h_sig_sum.Integral())
+        h_sig_sum.SetLineColor(ROOT.kRed + 1)
+        h_sig_sum.SetLineWidth(3)
+        h_sig_sum.SetFillStyle(0)
+
+    ymax = 0.0
+    if h_bkg_sum:
+        ymax = max(ymax, h_bkg_sum.GetMaximum())
+    if h_sig_sum:
+        ymax = max(ymax, h_sig_sum.GetMaximum())
+    if logy:
+        ymin = 1e-4
+        ymax *= 12
+    else:
+        ymin = 0.0
+        ymax *= 1.55
+
+    first = True
+    for hist in (h_bkg_sum, h_sig_sum):
+        if hist is None:
+            continue
+        hist.GetXaxis().SetTitle(xtitle)
+        hist.GetYaxis().SetTitle("Unit area")
+        hist.GetXaxis().SetRangeUser(xmin, xmax)
+        hist.SetMinimum(ymin)
+        hist.SetMaximum(ymax)
+        hist.GetXaxis().SetTitleSize(0.045)
+        hist.GetYaxis().SetTitleSize(0.045)
+        hist.GetXaxis().SetLabelSize(0.04)
+        hist.GetYaxis().SetLabelSize(0.04)
+        hist.GetYaxis().SetTitleOffset(1.3)
+        hist.Draw("HIST" if first else "HIST SAME")
+        first = False
+
+    _draw_cut_guides(config, ymin, ymax)
+
+    leg = ROOT.TLegend(0.60, 0.73, 0.92, 0.88)
+    leg.SetTextSize(0.032)
+    if h_sig_sum:
+        leg.AddEntry(h_sig_sum, "Signal", "l")
+    if h_bkg_sum:
+        leg.AddEntry(h_bkg_sum, "Background", "f")
+    leg.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.14, 0.93, "#bf{FCC-ee} #it{Simulation} (normalized)")
+    latex.SetTextSize(0.035)
+    latex.DrawLatex(0.66, 0.93, "#sqrt{s} = 240 GeV")
+
+    outdir = os.path.join(outputDir, "cut_diagnostics_normalized")
+    os.makedirs(outdir, exist_ok=True)
+    c.SaveAs(os.path.join(outdir, f"{config['name']}_norm.pdf"))
+    c.SaveAs(os.path.join(outdir, f"{config['name']}_norm.png"))
+    c.Close()
 
 
 def collectCutflowData():
@@ -906,33 +1427,14 @@ if __name__ == "__main__":
         print(f"  {hname}...")
         makePlot(hname, xtitle, rebin, xmin, xmax, logy)
 
-    # Make normalized plots (signal vs background, both normalized to unit area)
+    # Make normalized plots (signal vs background, both normalized to unit area).
+    # Use the same histogram inventory as the stacked plots so checkpoint
+    # variables such as *_after_cut1/2/3 are regenerated automatically.
     print("\nGenerating normalized plots...")
-    norm_hists = [
-        ("lepton_p", "Lepton momentum [GeV]", 4, 0, 150),
-        ("lepton_iso", "Lepton isolation", 2, 0, 1),
-        ("missingEnergy_e", "Missing energy [GeV]", 4, 0, 150),
-        ("missingEnergy_p", "Missing momentum [GeV]", 4, 0, 150),
-        ("missingMass", "Missing mass [GeV]", 4, 0, 240),
-        ("cosTheta_miss", "|cos(#theta_{miss})|", 1, 0, 1),
-        ("visibleEnergy", "Visible energy (no lepton) [GeV]", 4, 0, 250),
-        ("jet0_p", "Jet 0 momentum [GeV]", 4, 0, 120),
-        ("jet1_p", "Jet 1 momentum [GeV]", 4, 0, 120),
-        ("jet2_p", "Jet 2 momentum [GeV]", 4, 0, 120),
-        ("jet3_p", "Jet 3 momentum [GeV]", 4, 0, 120),
-        ("Zcand_m", "m_{Z cand} [GeV]", 4, 0, 200),
-        ("Wstar_m", "m_{W*} [GeV]", 4, 0, 150),
-        ("Wlep_m", "m_{W_{lep}} [GeV]", 4, 0, 200),
-        ("Hcand_m", "m_{H cand} [GeV]", 4, 50, 250),
-        ("Hcand_m_afterZ", "m_{H cand} (after Z cut) [GeV]", 4, 50, 250),
-        ("Hcand_m_final", "m_{H cand} (final) [GeV]", 4, 50, 250),
-        ("recoil_m", "Recoil mass [GeV]", 4, 50, 200),
-        ("recoil_m_afterZ", "Recoil mass (after Z cut) [GeV]", 4, 50, 200),
-        ("deltaZ", "|m_{jj} - m_{Z}| [GeV]", 4, 0, 50),
-    ]
-    for hname, xtitle, rebin, xmin, xmax in norm_hists:
+    norm_hists = [entry for entry in histograms if entry[0] != "cutFlow"]
+    for hname, xtitle, rebin, xmin, xmax, logy in norm_hists:
         print(f"  {hname}_norm...")
-        makeNormalizedPlot(hname, xtitle, rebin, xmin, xmax)
+        makeNormalizedPlot(hname, xtitle, rebin, xmin, xmax, logy)
 
     # Make shape comparison plots (signal vs WW vs ZZ separately)
     print("\nGenerating shape comparison plots...")
@@ -953,6 +1455,10 @@ if __name__ == "__main__":
         ("jet1_p", "Jet 1 momentum [GeV]", 4, 0, 120),
         ("jet2_p", "Jet 2 momentum [GeV]", 4, 0, 120),
         ("jet3_p", "Jet 3 momentum [GeV]", 4, 0, 120),
+        ("min_jet_p", "Minimum jet momentum [GeV]", 4, 0, 80),
+        ("sqrt_d34", "#sqrt{d_{34}} [GeV]", 2, 0, 40),
+        ("deltaR_Wstar", "#DeltaR_{jj}^{W*}", 2, 0, 5),
+        ("angle_Wstar_jj", "Opening angle of W* jets [rad]", 2, 0, 3.2),
     ]
     for hname, xtitle, rebin, xmin, xmax in shape_hists:
         print(f"  {hname}_shape...")
@@ -960,6 +1466,13 @@ if __name__ == "__main__":
 
     # Print cutflow table
     makeCutflowTable()
+
+    # Dedicated plots for each analysis cut
+    print("\nGenerating cut-diagnostic plots...")
+    for config in CUT_DIAGNOSTICS:
+        print(f"  {config['name']}...")
+        makeCutDiagnosticPlot(config)
+        makeNormalizedCutDiagnosticPlot(config)
 
     print(f"All plots saved to: {outputDir}")
     print("Done!")

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ANALYSIS_DIR))
 
 from ml_config import (
     BACKGROUND_SAMPLES,
+    DEFAULT_BDT_SCORED_DIR,
     DEFAULT_MODEL_DIR,
     DEFAULT_SCORE_BRANCH,
     DEFAULT_TREE_NAME,
@@ -28,7 +29,7 @@ from ml_config import (
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input-dir', default=DEFAULT_TREEMAKER_DIR)
-    parser.add_argument('--output-dir', default='output/h_hww_lvqq/bdt_scored/ecm240')
+    parser.add_argument('--output-dir', default=DEFAULT_BDT_SCORED_DIR)
     parser.add_argument('--tree-name', default=DEFAULT_TREE_NAME)
     parser.add_argument('--model', default=str(Path(DEFAULT_MODEL_DIR) / 'xgboost_bdt.json'))
     parser.add_argument('--features-json', default=str(Path(DEFAULT_MODEL_DIR) / 'training_metrics.json'))

@@ -10,8 +10,8 @@ You only need to interact with one script in normal use:
 - `run_lvqq.py`
   - Unified driver for the full workflow.
   - Can run the whole chain or individual stages:
-    `all`, `stage1`, `ml`, `histmaker`, `treemaker`, `train`, `apply`,
-    `fit`, `plots`, `paper`.
+    `all`, `stage1`, `ml`, `histmaker`, `treemaker`, `scanmaker`, `cutscan`,
+    `scans`, `train`, `apply`, `fit`, `plots`, `paper`.
 
 - `h_hww_lvqq.py`
   - Unified FCCAnalyses analysis module.
@@ -19,16 +19,20 @@ You only need to interact with one script in normal use:
     `output/h_hww_lvqq/histmaker/ecm240/`.
   - `LVQQ_MODE=treemaker` writes flat ML ntuples to
     `output/h_hww_lvqq/treemaker/ecm240/`.
+  - `LVQQ_MODE=scanmaker` writes loose cut-scan ntuples to
+    `output/h_hww_lvqq/scanmaker/ecm240/`.
 
 - `ml_config.py`
   - Shared analysis configuration for the ML workflow.
   - Defines the feature list, signal/background sample lists, and default
     output locations.
-  - The default background setup is full statistics for all signal and
-    background samples.
-  - A global `LVQQ_BACKGROUND_FRACTION` override is still available, and the
-    per-group overrides `LVQQ_WW_FRACTION`, `LVQQ_ZZ_FRACTION`,
-    `LVQQ_QQ_FRACTION`, and `LVQQ_TAUTAU_FRACTION` can be used when needed.
+  - The default background setup keeps signal, `ZH(other)`, and the large
+    reducible backgrounds all at full statistics.
+  - A global `LVQQ_BACKGROUND_FRACTION` override is still available for quick
+    reduced-stat runs over all backgrounds, and the per-group overrides
+    `LVQQ_WW_FRACTION`, `LVQQ_ZZ_FRACTION`, `LVQQ_QQ_FRACTION`,
+    `LVQQ_TAUTAU_FRACTION`, and `LVQQ_ZH_OTHER_FRACTION` can be used when
+    needed.
 
 - `plots_lvqq.py`
   - Reads the histmaker ROOT files and produces cutflow tables plus the
@@ -52,6 +56,11 @@ You only need to interact with one script in normal use:
   - Produces `fit_results.json` and the fit plots under
     `ml/models/xgboost_bdt_v6/plots/`.
 
+- `ml/scan_preselection_cuts.py`
+  - Reads loose scanmaker ntuples and scans lepton, isolation, MET,
+    missing-direction, `sqrt(d34)`, and asymmetric recoil-window thresholds.
+  - Produces CSV summaries and scan plots under `cut_scans/`.
+
 - `paper/main.tex`
   - The note/paper source.
   - Uses the plots and numbers produced by the workflow.
@@ -72,6 +81,32 @@ You only need to interact with one script in normal use:
 6. `python3 run_lvqq.py plots`
 7. `python3 run_lvqq.py paper`
 
+## Cut-scan workflow
+
+For preselection optimization studies, first make the loose scan ntuples and
+then run the offline scans:
+
+```bash
+python3 run_lvqq.py scans
+```
+
+For quick development, use a reduced background fraction. Signal remains at
+full statistics:
+
+```bash
+python3 run_lvqq.py scans --background-fraction 0.05
+```
+
+For a very fast smoke test, reduce signal and all backgrounds:
+
+```bash
+python3 run_lvqq.py scans --signal-fraction 0.01 --background-fraction 0.0001
+```
+
+The scan stage writes ROOT files to `output/h_hww_lvqq/scanmaker/ecm240/` and
+CSV/plot outputs to `cut_scans/`. The nominal `treemaker` output remains the
+baseline cut7-selected ntuple used for BDT training and fitting.
+
 ## One-command run
 
 From this directory:
@@ -88,7 +123,8 @@ The default background configuration corresponds to:
 - `tautau`: `100%`
 - `qq`: `100%`
 
-To override all reducible backgrounds with one common fraction:
+To override all backgrounds with one common fraction while keeping signal at
+full statistics:
 
 ```bash
 python3 run_lvqq.py all --background-fraction 0.1
@@ -100,11 +136,18 @@ To override only one background class:
 python3 run_lvqq.py all --ww-fraction 0.5 --zz-fraction 0.3 --qq-fraction 0.1 --tautau-fraction 0.1
 ```
 
+To include `ZH(other)` in a reduced-stat test explicitly:
+
+```bash
+python3 run_lvqq.py scans --background-fraction 0.0001
+```
+
 Useful shorter variants:
 
 ```bash
 python3 run_lvqq.py stage1   # histmaker + treemaker
 python3 run_lvqq.py ml       # train + apply + fit
+python3 run_lvqq.py scans    # loose scanmaker + preselection cut scans
 ```
 
 ## Batch running on subMIT

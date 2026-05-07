@@ -40,18 +40,19 @@ from ml_config import (
     DEFAULT_TREEMAKER_DIR,
     ML_FEATURES,
     SAMPLE_PROCESSING_FRACTIONS,
+    SIGNAL_FRACTION,
     SIGNAL_SAMPLES,
 )
 
-# Cross-sections [pb], total generated events, and processing fraction.
-# Weight = lumi * xsec / (ngen * fraction) to correctly account for
-# only processing a subset of generated events.
+# Cross-sections [pb] and nominal generated events.  The event weight is
+# computed from each treemaker file's eventsProcessed counter when available,
+# with ngen*fraction kept only as a fallback for older or malformed files.
 SAMPLE_INFO = {
-    # Signal (fraction=1, all events processed)
-    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": 1.0},
-    "wzp6_ee_bbH_HWW_ecm240": {"xsec": 0.006350, "ngen": 1000000, "fraction": 1.0},
-    "wzp6_ee_ccH_HWW_ecm240": {"xsec": 0.004988, "ngen": 1200000, "fraction": 1.0},
-    "wzp6_ee_ssH_HWW_ecm240": {"xsec": 0.006403, "ngen": 1200000, "fraction": 1.0},
+    # Signal. The fraction is 1.0 for nominal runs and can be reduced for smoke tests.
+    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_HWW_ecm240"]},
+    "wzp6_ee_bbH_HWW_ecm240": {"xsec": 0.006350, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_HWW_ecm240"]},
+    "wzp6_ee_ccH_HWW_ecm240": {"xsec": 0.004988, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_HWW_ecm240"]},
+    "wzp6_ee_ssH_HWW_ecm240": {"xsec": 0.006403, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_HWW_ecm240"]},
     # Diboson and 2-fermion backgrounds. The processed fraction is shared with
     # the FCCAnalyses stage through ml_config.py to keep the whole chain aligned.
     "p8_ee_WW_ecm240":        {"xsec": 16.4385, "ngen": 373375386, "fraction": SAMPLE_PROCESSING_FRACTIONS["p8_ee_WW_ecm240"]},
@@ -62,27 +63,27 @@ SAMPLE_INFO = {
     "wz3p6_ee_ss_ecm240":     {"xsec": 10.7725, "ngen": 102348636, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_ss_ecm240"]},
     "wz3p6_ee_bb_ecm240":     {"xsec": 10.4299, "ngen": 99490000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_bb_ecm240"]},
     "wz3p6_ee_tautau_ecm240": {"xsec": 4.6682, "ngen": 235800000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_tautau_ecm240"]},
-    # ZH with H->other (fraction=1, all events processed)
-    "wzp6_ee_qqH_Hbb_ecm240":    {"xsec": 0.03106, "ngen": 500000, "fraction": 1.0},
-    "wzp6_ee_qqH_Htautau_ecm240": {"xsec": 0.003345, "ngen": 200000, "fraction": 1.0},
-    "wzp6_ee_qqH_Hgg_ecm240":    {"xsec": 0.004367, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_qqH_Hcc_ecm240":    {"xsec": 0.001542, "ngen": 200000, "fraction": 1.0},
-    "wzp6_ee_qqH_HZZ_ecm240":    {"xsec": 0.001397, "ngen": 1200000, "fraction": 1.0},
-    "wzp6_ee_bbH_Hbb_ecm240":    {"xsec": 0.01731, "ngen": 100000, "fraction": 1.0},
-    "wzp6_ee_bbH_Htautau_ecm240": {"xsec": 0.001864, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_bbH_Hgg_ecm240":    {"xsec": 0.002433, "ngen": 200000, "fraction": 1.0},
-    "wzp6_ee_bbH_Hcc_ecm240":    {"xsec": 0.0008591, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_bbH_HZZ_ecm240":    {"xsec": 0.0007782, "ngen": 1000000, "fraction": 1.0},
-    "wzp6_ee_ccH_Hbb_ecm240":    {"xsec": 0.01359, "ngen": 200000, "fraction": 1.0},
-    "wzp6_ee_ccH_Htautau_ecm240": {"xsec": 0.001464, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_ccH_Hgg_ecm240":    {"xsec": 0.001911, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_ccH_Hcc_ecm240":    {"xsec": 0.0006748, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_ccH_HZZ_ecm240":    {"xsec": 0.0006113, "ngen": 1200000, "fraction": 1.0},
-    "wzp6_ee_ssH_Hbb_ecm240":    {"xsec": 0.01745, "ngen": 200000, "fraction": 1.0},
-    "wzp6_ee_ssH_Htautau_ecm240": {"xsec": 0.001879, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_ssH_Hgg_ecm240":    {"xsec": 0.002453, "ngen": 400000, "fraction": 1.0},
-    "wzp6_ee_ssH_Hcc_ecm240":    {"xsec": 0.0008662, "ngen": 300000, "fraction": 1.0},
-    "wzp6_ee_ssH_HZZ_ecm240":    {"xsec": 0.0007847, "ngen": 600000, "fraction": 1.0},
+    # ZH with H->other. The processed fraction is shared with ml_config.py.
+    "wzp6_ee_qqH_Hbb_ecm240":    {"xsec": 0.03106, "ngen": 500000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hbb_ecm240"]},
+    "wzp6_ee_qqH_Htautau_ecm240": {"xsec": 0.003345, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Htautau_ecm240"]},
+    "wzp6_ee_qqH_Hgg_ecm240":    {"xsec": 0.004367, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hgg_ecm240"]},
+    "wzp6_ee_qqH_Hcc_ecm240":    {"xsec": 0.001542, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hcc_ecm240"]},
+    "wzp6_ee_qqH_HZZ_ecm240":    {"xsec": 0.001397, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_HZZ_ecm240"]},
+    "wzp6_ee_bbH_Hbb_ecm240":    {"xsec": 0.01731, "ngen": 100000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hbb_ecm240"]},
+    "wzp6_ee_bbH_Htautau_ecm240": {"xsec": 0.001864, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Htautau_ecm240"]},
+    "wzp6_ee_bbH_Hgg_ecm240":    {"xsec": 0.002433, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hgg_ecm240"]},
+    "wzp6_ee_bbH_Hcc_ecm240":    {"xsec": 0.0008591, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hcc_ecm240"]},
+    "wzp6_ee_bbH_HZZ_ecm240":    {"xsec": 0.0007782, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_HZZ_ecm240"]},
+    "wzp6_ee_ccH_Hbb_ecm240":    {"xsec": 0.01359, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hbb_ecm240"]},
+    "wzp6_ee_ccH_Htautau_ecm240": {"xsec": 0.001464, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Htautau_ecm240"]},
+    "wzp6_ee_ccH_Hgg_ecm240":    {"xsec": 0.001911, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hgg_ecm240"]},
+    "wzp6_ee_ccH_Hcc_ecm240":    {"xsec": 0.0006748, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hcc_ecm240"]},
+    "wzp6_ee_ccH_HZZ_ecm240":    {"xsec": 0.0006113, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_HZZ_ecm240"]},
+    "wzp6_ee_ssH_Hbb_ecm240":    {"xsec": 0.01745, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hbb_ecm240"]},
+    "wzp6_ee_ssH_Htautau_ecm240": {"xsec": 0.001879, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Htautau_ecm240"]},
+    "wzp6_ee_ssH_Hgg_ecm240":    {"xsec": 0.002453, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hgg_ecm240"]},
+    "wzp6_ee_ssH_Hcc_ecm240":    {"xsec": 0.0008662, "ngen": 300000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hcc_ecm240"]},
+    "wzp6_ee_ssH_HZZ_ecm240":    {"xsec": 0.0007847, "ngen": 600000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_HZZ_ecm240"]},
 }
 INT_LUMI = 10.8e6  # pb^-1
 
@@ -167,13 +168,25 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
                 print(f'[warn] {root_path} missing branches: {missing}')
             frame = tree.arrays(use_features, library='pd')
 
-        # Compute physics weight: lumi * xsec / ngen_total
+        # Compute physics weight from the actual number of events processed
+        # into this treemaker file.  This is more robust than using a requested
+        # processing fraction, because quick studies often use hand-made file
+        # subsets whose actual fraction differs from the nominal group fraction.
         info = SAMPLE_INFO.get(sample, {})
         if info:
-            frac = info.get('fraction', 1.0)
-            phys_weight = INT_LUMI * info['xsec'] / (info['ngen'] * frac)
+            processed = status.get('processed')
+            if processed is not None and processed > 0:
+                norm_events = processed
+                norm_source = 'eventsProcessed'
+            else:
+                frac = info.get('fraction', 1.0)
+                norm_events = info['ngen'] * frac
+                norm_source = 'ngen*fraction fallback'
+            phys_weight = INT_LUMI * info['xsec'] / norm_events
         else:
             phys_weight = 1.0
+            norm_events = None
+            norm_source = 'unknown'
             print(f'[warn] no cross-section info for {sample}, using weight=1')
 
         frame['phys_weight'] = phys_weight
@@ -182,7 +195,8 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
         n = len(frame)
         expected = INT_LUMI * info.get('xsec', 0)
         print(f'  {sample}: {n} events, phys_weight={phys_weight:.6f}, '
-              f'effective={n*phys_weight:.0f} (expected total={expected:.0f})')
+              f'effective={n*phys_weight:.0f} (expected total={expected:.0f}, '
+              f'norm={norm_events}, source={norm_source})')
         frames.append(frame)
 
     if not frames:
@@ -441,9 +455,10 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
     fig.savefig(plot_dir / 'sig_eff_vs_bkg_rej.pdf', bbox_inches='tight')
     plt.close()
 
-    # 3. BDT score distributions (overtraining check) - weighted
+    # 3. Weighted BDT score distributions for train/test comparison
     fig, ax = plt.subplots(figsize=(8, 6))
-    bins = np.linspace(0, 1, 51)
+    # Match the final profile-likelihood fit binning for easier comparison.
+    bins = np.linspace(0, 1, 21)
     # Train - weighted
     ax.hist(train_score[y_train == 1], bins=bins, weights=w_train[y_train == 1],
             density=True, alpha=0.5,
@@ -463,7 +478,7 @@ def make_plots(output_dir, y_train, y_test, train_score, test_score,
                label='Background (test)', zorder=5)
     ax.set_xlabel('BDT Score')
     ax.set_ylabel('Normalised (weighted)')
-    ax.set_title('BDT Score Distribution (Overtraining Check)')
+    ax.set_title('BDT Score Distributions')
     ax.legend(fontsize=9)
     add_fcc_label(ax, x=0.35, y=0.97)
     fig.savefig(plot_dir / 'overtraining_check.png', dpi=150, bbox_inches='tight')
@@ -593,12 +608,14 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print('=== Loading Data ===')
+    print(f"Signal fraction: {SIGNAL_FRACTION:.6g}")
     print(
         'Background fractions: '
         f"WW={BACKGROUND_FRACTIONS['ww']:.6g}, "
         f"ZZ={BACKGROUND_FRACTIONS['zz']:.6g}, "
         f"qq={BACKGROUND_FRACTIONS['qq']:.6g}, "
-        f"tautau={BACKGROUND_FRACTIONS['tautau']:.6g}"
+        f"tautau={BACKGROUND_FRACTIONS['tautau']:.6g}, "
+        f"ZH(other)={BACKGROUND_FRACTIONS['zh_other']:.6g}"
     )
     print('Signal:')
     sig_df = read_samples(args.input_dir, args.tree_name,

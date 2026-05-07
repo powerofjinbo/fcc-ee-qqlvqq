@@ -31,6 +31,19 @@ sys.path.insert(0, str(ANALYSIS_DIR))
 from ml_config import BACKGROUND_SAMPLES, DEFAULT_MODEL_DIR, SIGNAL_SAMPLES
 
 
+def _nice_scale_factor(raw_scale: float) -> int:
+    """Round a signal scale factor to a readable 1/2/5 x 10^n value."""
+    if raw_scale <= 1:
+        return 1
+    exponent = int(np.floor(np.log10(raw_scale)))
+    base = 10 ** exponent
+    for multiplier in (1, 2, 5, 10):
+        candidate = multiplier * base
+        if raw_scale <= candidate:
+            return int(candidate)
+    return int(10 * base)
+
+
 def load_scores(scores_path):
     """Load BDT scores from CSV."""
     df = pd.read_csv(scores_path)
@@ -355,104 +368,126 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
         fig.savefig(plots_dir / "bdt_cut_scan.png", dpi=150)
         plt.close(fig)
 
-    # 2. Template shapes at best working point
-    fig, (ax_top, ax_bottom) = plt.subplots(
-        2,
-        1,
-        figsize=(7.5, 6.8),
-        sharex=True,
-        gridspec_kw={"height_ratios": [2.5, 1.8], "hspace": 0.05},
-    )
+    # 2. Template shapes at the final 20-bin working point
+    fig, ax = plt.subplots(figsize=(7.6, 5.4))
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
     bin_width = bins[1] - bins[0]
 
-    # Stack backgrounds
-    bkg_labels = list(bkg_hists.keys())
-    bkg_arrays = [bkg_hists[k] for k in bkg_labels]
-    colors = ["#5B7BD5", "#D65F5F", "#4CAF50", "#F1C84B", "#F39C5A"]
+    # Use a stable plotting order so the legend and stack read cleanly.
+    preferred_order = ["tautau", "ZH_other", "qq", "ZZ", "WW"]
+    bkg_labels = [label for label in preferred_order if label in bkg_hists]
+    bkg_arrays = [np.asarray(bkg_hists[label], dtype=float) for label in bkg_labels]
+    color_map = {
+        "WW": "#E69F00",
+        "ZZ": "#4C78A8",
+        "qq": "#59A14F",
+        "tautau": "#9C755F",
+        "ZH_other": "#B07AA1",
+    }
 
-    ax_top.hist(
-        [bin_centers] * len(bkg_arrays),
-        bins=bins,
-        weights=bkg_arrays,
-        stacked=True,
-        label=[f"Bkg: {l}" for l in bkg_labels],
-        color=colors[:len(bkg_arrays)],
-        alpha=0.88,
-    )
+    cumulative = np.zeros_like(sig_hist, dtype=float)
+    legend_handles = []
+    legend_labels = []
+    for label, arr in zip(bkg_labels, bkg_arrays):
+        bars = ax.bar(
+            bins[:-1],
+            arr,
+            width=bin_width,
+            align="edge",
+            bottom=cumulative,
+            color=color_map[label],
+            edgecolor="white",
+            linewidth=0.45,
+            alpha=0.92,
+        )
+        cumulative += arr
+        legend_handles.append(bars[0])
+        legend_labels.append(label.replace("_", " "))
 
-    total_bkg = np.sum(np.asarray(bkg_arrays), axis=0)
-    ax_top.step(
+    total_bkg = cumulative.copy()
+    total_bkg_handle = ax.step(
         bins[:-1],
         total_bkg,
         where="post",
-        color="#22313F",
-        linewidth=1.2,
+        color="#1F2D3A",
+        linewidth=1.4,
         alpha=0.95,
         label="Total background",
-    )
+    )[0]
 
-    # Signal overlay (scaled for visibility)
-    sig_scale = max(1, int(sum(h.sum() for h in bkg_hists.values()) / sig_hist.sum() / 5)) if sig_hist.sum() > 0 else 1
-    ax_top.step(
+    raw_scale = (0.18 * total_bkg.max() / sig_hist.max()) if sig_hist.sum() > 0 and total_bkg.max() > 0 else 1.0
+    sig_scale = _nice_scale_factor(raw_scale)
+    sig_handle = ax.bar(
         bins[:-1],
         sig_hist * sig_scale,
-        where="post",
-        color="black",
-        linewidth=2.0,
-        label=f"Signal (x{sig_scale})",
-    )
+        width=bin_width,
+        align="edge",
+        fill=False,
+        edgecolor="#D62728",
+        linewidth=1.8,
+        linestyle="-",
+        label=f"Signal × {sig_scale}",
+        zorder=5,
+    )[0]
 
-    ax_top.set_ylabel(f"Events / {bin_width:.2f}")
-    ax_top.set_title("BDT score templates and background composition")
-    ax_top.legend(fontsize=8.7, ncol=2, frameon=False, loc="upper center")
-    ax_top.text(0.03, 0.95, r'$\mathbf{FCC\text{-}ee}$ Simulation',
-                transform=ax_top.transAxes, fontsize=10, va='top', fontstyle='italic')
-    ax_top.text(0.03, 0.89, r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
-                transform=ax_top.transAxes, fontsize=9, va='top')
-    ax_top.set_yscale("log")
-    ax_top.set_ylim(bottom=0.1)
-    ax_top.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
-    ax_top.yaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10), numticks=120))
-    ax_top.yaxis.set_minor_formatter(NullFormatter())
-    ax_top.grid(axis="y", which="major", alpha=0.24, linewidth=0.8)
-    ax_top.grid(axis="y", which="minor", alpha=0.14, linewidth=0.55)
-    ax_top.tick_params(axis="y", which="major", labelsize=9)
-    ax_top.tick_params(axis="y", which="minor", length=2.5)
-
-    # Sub-dominant background yields panel (excluding WW)
-    subdominant = [
-        (label, arr, color)
-        for label, arr, color in zip(bkg_labels, bkg_arrays, colors)
-        if label != "WW"
-    ]
-    ax_bottom.hist(
-        [bin_centers] * len(subdominant),
-        bins=bins,
-        weights=[arr for _, arr, _ in subdominant],
-        stacked=True,
-        label=[l for l, _, _ in subdominant],
-        color=[c for _, _, c in subdominant],
-        alpha=0.88,
-    )
-    ax_bottom.set_xlabel("BDT score")
-    ax_bottom.set_ylabel(f"Events / {bin_width:.2f}")
-    ax_bottom.set_xlim(0.0, 1.0)
-    ax_bottom.set_yscale("log")
-    ax_bottom.set_ylim(bottom=0.1)
-    ax_bottom.legend(fontsize=7, ncol=2, frameon=False, loc="upper right")
-    ax_bottom.grid(axis="y", which="major", alpha=0.24)
-    ax_bottom.text(
-        0.02,
+    ax.set_ylabel(f"Events / {bin_width:.2f}")
+    ax.set_xlabel("BDT score")
+    ax.set_title("20-bin BDT templates used in the profile-likelihood fit")
+    ax.text(
+        0.03,
         0.95,
-        "Sub-dominant backgrounds (excl. WW)",
-        transform=ax_bottom.transAxes,
-        fontsize=8,
-        va="top",
+        r'$\mathbf{FCC\text{-}ee}$ Simulation',
+        transform=ax.transAxes,
+        fontsize=10,
+        va='top',
+        fontstyle='italic',
     )
+    ax.text(
+        0.03,
+        0.89,
+        r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
+        transform=ax.transAxes,
+        fontsize=9,
+        va='top',
+    )
+    ax.text(
+        0.97,
+        0.95,
+        "20 bins in [0, 1]",
+        transform=ax.transAxes,
+        fontsize=9,
+        va="top",
+        ha="right",
+        color="#334455",
+    )
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=0.1, top=max(total_bkg.max(), (sig_hist * sig_scale).max()) * 12.0)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xticks(np.linspace(0.0, 1.0, 11))
+    ax.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
+    ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10), numticks=120))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.grid(axis="y", which="major", alpha=0.22, linewidth=0.8)
+    ax.grid(axis="y", which="minor", alpha=0.10, linewidth=0.5)
+    ax.tick_params(axis="y", which="major", labelsize=9)
+    ax.tick_params(axis="y", which="minor", length=2.5)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(
+        [sig_handle, total_bkg_handle, *legend_handles[::-1]],
+        [f"Signal × {sig_scale}", "Total background", *legend_labels[::-1]],
+        fontsize=8.3,
+        ncol=3,
+        frameon=False,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.02),
+        columnspacing=1.1,
+        handlelength=2.4,
+    )
+
     fig.tight_layout()
-    fig.savefig(plots_dir / "fit_templates.pdf", dpi=150)
-    fig.savefig(plots_dir / "fit_templates.png", dpi=150)
+    fig.savefig(plots_dir / "fit_templates.pdf", dpi=170)
+    fig.savefig(plots_dir / "fit_templates.png", dpi=170)
     plt.close(fig)
 
     # 3. Rank-ordered BDT bins (highest score to lowest score)
@@ -460,6 +495,7 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     rank_bins = np.arange(1, len(sig_hist) + 1)
     sig_rank = sig_hist[rank_order]
     bkg_rank_arrays = [arr[rank_order] for arr in bkg_arrays]
+    bkg_rank_colors = [color_map[label] for label in bkg_labels]
     total_rank = np.sum(np.asarray(bkg_rank_arrays), axis=0)
 
     fig, (ax_top, ax_bottom) = plt.subplots(
@@ -471,7 +507,7 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     )
 
     cumulative = np.zeros_like(rank_bins, dtype=float)
-    for label, arr, color in zip(bkg_labels, bkg_rank_arrays, colors):
+    for label, arr, color in zip(bkg_labels, bkg_rank_arrays, bkg_rank_colors):
         ax_top.bar(
             rank_bins,
             arr,

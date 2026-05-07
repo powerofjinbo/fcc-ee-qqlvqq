@@ -13,8 +13,6 @@ from pathlib import Path
 
 ANALYSIS_DIR = Path(__file__).resolve().parent
 SETUP_SH = Path("/home/submit/jinboz1/tutorials/FCCAnalyses/setup.sh")
-MODEL_DIR = "ml/models/xgboost_bdt_v6"
-
 
 def parse_fraction(value: str) -> float:
     try:
@@ -27,7 +25,7 @@ def parse_fraction(value: str) -> float:
 
 
 def default_background_fractions() -> dict[str, float]:
-    return {"ww": 1.0, "zz": 1.0, "qq": 1.0, "tautau": 1.0}
+    return {"ww": 1.0, "zz": 1.0, "qq": 1.0, "tautau": 1.0, "zh_other": 1.0}
 
 
 def run_bash(command: str, *, needs_setup: bool = False, extra_env: dict[str, str] | None = None) -> None:
@@ -42,12 +40,27 @@ def run_bash(command: str, *, needs_setup: bool = False, extra_env: dict[str, st
     subprocess.run(["bash", "-lc", shell_cmd], check=True, env=env)
 
 
+def fccanalysis_run_command() -> str:
+    raw_cpus = os.environ.get("LVQQ_CPUS", os.environ.get("SLURM_CPUS_PER_TASK", "32"))
+    try:
+        cpus = int(raw_cpus)
+    except ValueError as exc:
+        raise ValueError(f"Invalid CPU setting {raw_cpus!r}; expected a positive integer") from exc
+    if cpus < 1:
+        raise ValueError(f"Invalid CPU setting {raw_cpus!r}; expected a positive integer")
+    return f"fccanalysis run --ncpus {cpus} h_hww_lvqq.py"
+
+
 def step_histmaker() -> None:
-    run_bash("fccanalysis run h_hww_lvqq.py", needs_setup=True, extra_env={"LVQQ_MODE": "histmaker"})
+    run_bash(fccanalysis_run_command(), needs_setup=True, extra_env={"LVQQ_MODE": "histmaker"})
 
 
 def step_treemaker() -> None:
-    run_bash("fccanalysis run h_hww_lvqq.py", needs_setup=True, extra_env={"LVQQ_MODE": "treemaker"})
+    run_bash(fccanalysis_run_command(), needs_setup=True, extra_env={"LVQQ_MODE": "treemaker"})
+
+
+def step_scanmaker() -> None:
+    run_bash(fccanalysis_run_command(), needs_setup=True, extra_env={"LVQQ_MODE": "scanmaker"})
 
 
 def step_train() -> None:
@@ -59,7 +72,11 @@ def step_apply() -> None:
 
 
 def step_fit() -> None:
-    run_bash(f"python3 ml/fit_profile_likelihood.py --model-dir {MODEL_DIR}")
+    run_bash("python3 ml/fit_profile_likelihood.py")
+
+
+def step_cutscan() -> None:
+    run_bash("python3 ml/scan_preselection_cuts.py")
 
 
 def step_roc_plot() -> None:
@@ -81,6 +98,10 @@ def step_plots() -> None:
     step_sync_paper_figures()
 
 
+def step_cut_plots() -> None:
+    run_bash("python3 plots_lvqq.py", needs_setup=True)
+
+
 def step_paper() -> None:
     step_roc_plot()
     step_supporting_figures()
@@ -93,10 +114,14 @@ def submit_to_slurm(args: argparse.Namespace) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
 
     rerun_cmd = [
+        "env",
+        f"LVQQ_CPUS={args.slurm_cpus}",
         "python3",
         str(ANALYSIS_DIR / "run_lvqq.py"),
         args.target,
     ]
+    if args.signal_fraction is not None:
+        rerun_cmd.extend(["--signal-fraction", str(args.signal_fraction)])
     if args.background_fraction is not None:
         rerun_cmd.extend(["--background-fraction", str(args.background_fraction)])
     if args.ww_fraction is not None:
@@ -107,6 +132,14 @@ def submit_to_slurm(args: argparse.Namespace) -> None:
         rerun_cmd.extend(["--qq-fraction", str(args.qq_fraction)])
     if args.tautau_fraction is not None:
         rerun_cmd.extend(["--tautau-fraction", str(args.tautau_fraction)])
+    if args.zh_other_fraction is not None:
+        rerun_cmd.extend(["--zh-other-fraction", str(args.zh_other_fraction)])
+    if args.sample_groups is not None:
+        rerun_cmd.extend(["--sample-groups", args.sample_groups])
+    if args.samples is not None:
+        rerun_cmd.extend(["--samples", args.samples])
+    if args.output_tag is not None:
+        rerun_cmd.extend(["--output-tag", args.output_tag])
 
     submit_cmd = [
         "sbatch",
@@ -140,19 +173,63 @@ def parse_args() -> argparse.Namespace:
         "target",
         nargs="?",
         default="all",
-        choices=["histmaker", "treemaker", "train", "apply", "fit", "plots", "paper", "stage1", "ml", "all"],
+        choices=[
+            "histmaker",
+            "treemaker",
+            "scanmaker",
+            "cutscan",
+            "scans",
+            "train",
+            "apply",
+            "fit",
+            "plots",
+            "cutplots",
+            "analysis",
+            "paper",
+            "stage1",
+            "ml",
+            "all",
+        ],
         help="Workflow target to run",
     )
     parser.add_argument(
         "--background-fraction",
         type=parse_fraction,
         default=None,
-        help="Global override for all reducible backgrounds (WW/ZZ/qq/tautau).",
+        help="Global override for all backgrounds (WW/ZZ/qq/tautau/ZH(other)).",
+    )
+    parser.add_argument(
+        "--signal-fraction",
+        type=parse_fraction,
+        default=None,
+        help="Override signal processing fraction for quick smoke tests.",
     )
     parser.add_argument("--ww-fraction", type=parse_fraction, default=None)
     parser.add_argument("--zz-fraction", type=parse_fraction, default=None)
     parser.add_argument("--qq-fraction", type=parse_fraction, default=None)
     parser.add_argument("--tautau-fraction", type=parse_fraction, default=None)
+    parser.add_argument("--zh-other-fraction", type=parse_fraction, default=None)
+    parser.add_argument(
+        "--sample-groups",
+        default=None,
+        help=(
+            "Comma-separated sample groups to run: signal,ww,zz,qq,tautau,zh_other. "
+            "Default is all groups."
+        ),
+    )
+    parser.add_argument(
+        "--samples",
+        default=None,
+        help=(
+            "Comma-separated exact sample names to run. This is useful for splitting "
+            "large groups such as qq into uu/dd/cc/ss/bb jobs."
+        ),
+    )
+    parser.add_argument(
+        "--output-tag",
+        default=None,
+        help="Write outputs to tagged directories, e.g. output/h_hww_lvqq_<tag> and plots_lvqq_<tag>.",
+    )
     parser.add_argument(
         "--slurm",
         action="store_true",
@@ -170,6 +247,14 @@ def main() -> None:
         raise SystemExit(f"Missing FCCAnalyses setup script: {SETUP_SH}")
 
     args = parse_args()
+    if args.output_tag is not None:
+        os.environ["LVQQ_OUTPUT_TAG"] = args.output_tag
+    else:
+        os.environ.pop("LVQQ_OUTPUT_TAG", None)
+    if args.signal_fraction is not None:
+        os.environ["LVQQ_SIGNAL_FRACTION"] = str(args.signal_fraction)
+    else:
+        os.environ.pop("LVQQ_SIGNAL_FRACTION", None)
     if args.background_fraction is not None:
         os.environ["LVQQ_BACKGROUND_FRACTION"] = str(args.background_fraction)
     else:
@@ -190,6 +275,18 @@ def main() -> None:
         os.environ["LVQQ_TAUTAU_FRACTION"] = str(args.tautau_fraction)
     else:
         os.environ.pop("LVQQ_TAUTAU_FRACTION", None)
+    if args.zh_other_fraction is not None:
+        os.environ["LVQQ_ZH_OTHER_FRACTION"] = str(args.zh_other_fraction)
+    else:
+        os.environ.pop("LVQQ_ZH_OTHER_FRACTION", None)
+    if args.sample_groups is not None:
+        os.environ["LVQQ_SAMPLE_GROUPS"] = args.sample_groups
+    else:
+        os.environ.pop("LVQQ_SAMPLE_GROUPS", None)
+    if args.samples is not None:
+        os.environ["LVQQ_ONLY_SAMPLES"] = args.samples
+    else:
+        os.environ.pop("LVQQ_ONLY_SAMPLES", None)
 
     active_fractions = default_background_fractions()
     if args.background_fraction is not None:
@@ -199,16 +296,27 @@ def main() -> None:
         "zz": args.zz_fraction,
         "qq": args.qq_fraction,
         "tautau": args.tautau_fraction,
+        "zh_other": args.zh_other_fraction,
     }.items():
         if value is not None:
             active_fractions[key] = value
 
     print(
+        f"Signal fraction: {args.signal_fraction if args.signal_fraction is not None else 1.0:.6g}"
+    )
+    if args.output_tag is not None:
+        print(f"Output tag: {args.output_tag}")
+    if args.sample_groups is not None:
+        print(f"Sample groups: {args.sample_groups}")
+    if args.samples is not None:
+        print(f"Samples: {args.samples}")
+    print(
         "Background fractions:"
         f" WW={active_fractions['ww']:.6g},"
         f" ZZ={active_fractions['zz']:.6g},"
         f" qq={active_fractions['qq']:.6g},"
-        f" tautau={active_fractions['tautau']:.6g}"
+        f" tautau={active_fractions['tautau']:.6g},"
+        f" ZH(other)={active_fractions['zh_other']:.6g}"
     )
 
     if args.slurm:
@@ -218,10 +326,22 @@ def main() -> None:
     mapping: dict[str, list[tuple[str, Callable[[], None]]]] = {
         "histmaker": [("histmaker", step_histmaker)],
         "treemaker": [("treemaker", step_treemaker)],
+        "scanmaker": [("scanmaker", step_scanmaker)],
+        "cutscan": [("cutscan", step_cutscan)],
+        "scans": [("scanmaker", step_scanmaker), ("cutscan", step_cutscan)],
         "train": [("train", step_train)],
         "apply": [("apply", step_apply)],
         "fit": [("fit", step_fit)],
         "plots": [("plots", step_plots)],
+        "cutplots": [("histmaker", step_histmaker), ("cut plots", step_cut_plots)],
+        "analysis": [
+            ("histmaker", step_histmaker),
+            ("treemaker", step_treemaker),
+            ("train", step_train),
+            ("apply", step_apply),
+            ("fit", step_fit),
+            ("plots", step_plots),
+        ],
         "paper": [("paper", step_paper)],
         "stage1": [("histmaker", step_histmaker), ("treemaker", step_treemaker)],
         "ml": [("train", step_train), ("apply", step_apply), ("fit", step_fit)],
