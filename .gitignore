@@ -29,3 +29,7 @@ paper/figs/
 paper/figures/
 paper/used_figures_latest/
 paper/__pycache__/
+
+# v_fable pre-change backups and legacy symlink index
+backup_pre_v_fable/
+latest_v9_outputs/

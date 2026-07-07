@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""Profile likelihood fit for sigma_ZH x BR(H->WW*) measurement.
+"""Profile likelihood fit for the sigma_ZH x BR(H->WW*) measurement.
 
 Methodology follows Jan Eysermans et al. (DOI: 10.17181/9v8ey-n6k50):
-- Template fit to BDT score distribution
+- Template fit to the BDT score distribution (20 uniform bins in [0, 1])
 - Signal strength mu = (sigma x BR)_obs / (sigma x BR)_SM
-- 1% flat normalization systematic on each background process
-- Uses pyhf for the statistical model
+- 1% flat normalization systematic on each background process group
+- MC template statistical uncertainties via a shared (HistFactory-convention)
+  staterror modifier per channel
+- Uses pyhf; parameter uncertainties from MINUIT/HESSE when iminuit is
+  available, otherwise from a finite-difference Hessian fallback
 
-Inputs:
-  - BDT test_scores.csv (from train_xgboost_bdt.py)
-  - Or: scored ROOT ntuples from treemaker
+v_fable changes relative to the v8-era script:
+- The fit ALWAYS prefers kfold_scores.csv (out-of-fold scores for every
+  selected event). test_scores.csv is only a fallback and its weight
+  scaling is derived from training_metrics.json instead of a hardcoded 0.30.
+- Missing score files are a hard error. There is no silent fallback to an
+  older model directory.
+- staterror is shared across samples in a channel by default
+  (--staterror-mode per-sample restores the old per-sample gammas).
+- A 1D profile-likelihood scan of mu validates the parabolic (HESSE) error.
 
-Outputs:
-  - Expected mu_hat, sigma(mu) from Asimov dataset
-  - Expected relative uncertainty on sigma_ZH x BR(H->WW*)
+Outputs: fit_results.json and plots under <model_dir>/plots/.
 """
 
 import argparse
@@ -28,7 +35,16 @@ THIS_DIR = Path(__file__).resolve().parent
 ANALYSIS_DIR = THIS_DIR.parent
 sys.path.insert(0, str(ANALYSIS_DIR))
 
-from ml_config import BACKGROUND_SAMPLES, DEFAULT_MODEL_DIR, SIGNAL_SAMPLES
+from ml_config import (
+    DEFAULT_MODEL_DIR,
+    FIT_BACKGROUND_GROUPS,
+    SIGNAL_SAMPLES,
+)
+
+CATEGORY_LABELS = {
+    "lep_on": "leptonic-W-on-shell-like",
+    "had_on": "hadronic-W-on-shell-like",
+}
 
 
 def _nice_scale_factor(raw_scale: float) -> int:
@@ -44,68 +60,121 @@ def _nice_scale_factor(raw_scale: float) -> int:
     return int(10 * base)
 
 
-def load_scores(scores_path):
-    """Load BDT scores from CSV."""
+# ----------------------------------------------------------------------------
+# Score loading
+# ----------------------------------------------------------------------------
+
+def resolve_scores_path(args):
+    """Locate the score file. kfold_scores.csv is strongly preferred.
+
+    Returns (scores_path, model_dir). Raises on missing files instead of
+    silently falling back to a different model version.
+    """
+    if args.scores:
+        scores_path = Path(args.scores)
+        if not scores_path.exists():
+            raise RuntimeError(f"--scores file does not exist: {scores_path}")
+        return scores_path, scores_path.parent
+
+    model_dir = Path(args.model_dir) if args.model_dir else ANALYSIS_DIR / DEFAULT_MODEL_DIR
+    kfold_path = model_dir / "kfold_scores.csv"
+    test_path = model_dir / "test_scores.csv"
+    if kfold_path.exists():
+        return kfold_path, model_dir
+    if test_path.exists():
+        print(
+            "[warn] kfold_scores.csv not found; falling back to test_scores.csv. "
+            "The final result should use out-of-fold scores — rerun train with --kfold > 0."
+        )
+        return test_path, model_dir
+    raise RuntimeError(
+        f"No score file found in {model_dir} (looked for kfold_scores.csv and "
+        "test_scores.csv). Run the train step first, or pass --scores/--model-dir "
+        "explicitly. Refusing to fall back to another model directory."
+    )
+
+
+def load_scores(scores_path, model_dir):
+    """Load scores and normalise weights to the full selected sample."""
     df = pd.read_csv(scores_path)
+    if "kfold" in scores_path.name:
+        print("  Using k-fold out-of-fold scores (all selected events, no scaling)")
+        return df, "kfold_scores.csv"
+
+    metrics_path = model_dir / "training_metrics.json"
+    if not metrics_path.exists():
+        raise RuntimeError(
+            f"test_scores.csv requires {metrics_path} to derive the test fraction; "
+            "file not found."
+        )
+    with open(metrics_path) as handle:
+        metrics = json.load(handle)
+    n_train = metrics.get("n_train")
+    n_test = metrics.get("n_test")
+    if not n_train or not n_test:
+        raise RuntimeError(f"{metrics_path} lacks n_train/n_test; cannot scale test weights.")
+    test_frac = n_test / (n_train + n_test)
+    df["phys_weight"] = df["phys_weight"] / test_frac
+    print(f"  Scaling test-set weights by 1/{test_frac:.4f} (from training_metrics.json)")
+    return df, "test_scores.csv"
+
+
+def ensure_score_categories(df):
+    """Recover reco W-topology categories from score metadata when possible."""
+    if "w_topology_category" not in df.columns and "lepW_offshell_like" in df.columns:
+        df["w_topology_category"] = (df["lepW_offshell_like"] > 0.5).astype(float)
+    if "w_topology_category" not in df.columns and "deltaW_onShell" in df.columns:
+        df["w_topology_category"] = (df["deltaW_onShell"] >= 0).astype(float)
     return df
 
 
-def build_templates(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
-    """Build signal and background histograms from BDT scores.
+def filter_reco_category(df, category):
+    """Filter score rows to one reco-level W-topology category."""
+    if category == "all":
+        return df
+    if "w_topology_category" not in df.columns:
+        raise RuntimeError(
+            "Requested a W-topology category fit, but the score file does not "
+            "contain w_topology_category/lepW_offshell_like/deltaW_onShell."
+        )
+    if category == "lep_on":
+        return df[df["w_topology_category"] < 0.5].copy()
+    if category == "had_on":
+        return df[df["w_topology_category"] >= 0.5].copy()
+    raise ValueError(f"Unknown category {category!r}")
 
-    Groups backgrounds by physics process type for independent normalization.
-    """
+
+# ----------------------------------------------------------------------------
+# Templates
+# ----------------------------------------------------------------------------
+
+def build_templates(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
+    """Build signal and per-group background histograms from BDT scores."""
     if bdt_cut is not None:
-        df = df[df["bdt_score"] >= bdt_cut].copy()
+        df = df[df["bdt_score"] >= bdt_cut]
 
     bins = np.linspace(score_range[0], score_range[1], nbins + 1)
 
-    # Signal template (with MC stat errors)
     sig_mask = df["y_true"] == 1
     sig_hist, _ = np.histogram(
-        df.loc[sig_mask, "bdt_score"],
-        bins=bins,
-        weights=df.loc[sig_mask, "phys_weight"],
+        df.loc[sig_mask, "bdt_score"], bins=bins, weights=df.loc[sig_mask, "phys_weight"],
     )
     sig_w2, _ = np.histogram(
-        df.loc[sig_mask, "bdt_score"],
-        bins=bins,
-        weights=df.loc[sig_mask, "phys_weight"] ** 2,
+        df.loc[sig_mask, "bdt_score"], bins=bins, weights=df.loc[sig_mask, "phys_weight"] ** 2,
     )
     sig_err = np.sqrt(sig_w2)
 
-    # Group backgrounds by process type for separate normalization systematics
-    bkg_groups = {
-        "WW": ["p8_ee_WW_ecm240"],
-        "ZZ": ["p8_ee_ZZ_ecm240"],
-        "qq": [s for s in BACKGROUND_SAMPLES if s.startswith("wz3p6_ee_") and "tautau" not in s],
-        "tautau": ["wz3p6_ee_tautau_ecm240"],
-        "ZH_other": [
-            s for s in BACKGROUND_SAMPLES
-            if s.startswith((
-                "wzp6_ee_qqH_H",
-                "wzp6_ee_bbH_H",
-                "wzp6_ee_ccH_H",
-                "wzp6_ee_ssH_H",
-            ))
-        ],
-    }
-
     bkg_hists = {}
     bkg_errs = {}
-    for group_name, samples in bkg_groups.items():
+    for group_name, samples in FIT_BACKGROUND_GROUPS.items():
         mask = df["sample_name"].isin(samples) & (df["y_true"] == 0)
         if mask.sum() == 0:
             continue
         h, _ = np.histogram(
-            df.loc[mask, "bdt_score"],
-            bins=bins,
-            weights=df.loc[mask, "phys_weight"],
+            df.loc[mask, "bdt_score"], bins=bins, weights=df.loc[mask, "phys_weight"],
         )
         w2, _ = np.histogram(
-            df.loc[mask, "bdt_score"],
-            bins=bins,
-            weights=df.loc[mask, "phys_weight"] ** 2,
+            df.loc[mask, "bdt_score"], bins=bins, weights=df.loc[mask, "phys_weight"] ** 2,
         )
         if h.sum() > 0:
             bkg_hists[group_name] = h
@@ -114,34 +183,58 @@ def build_templates(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
     return sig_hist, sig_err, bkg_hists, bkg_errs, bins
 
 
-def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.01, use_staterror=True):
-    """Build a pyhf model with signal + backgrounds + normalization + MC stat.
+def build_templates_by_category(df, nbins=20, bdt_cut=None, score_range=(0, 1)):
+    """Build one BDT template set per reco W-topology category."""
+    templates = {}
+    for category in ("lep_on", "had_on"):
+        category_df = filter_reco_category(df, category)
+        if category_df.empty:
+            continue
+        sig_hist, sig_err, bkg_hists, bkg_errs, bins = build_templates(
+            category_df, nbins=nbins, bdt_cut=bdt_cut, score_range=score_range,
+        )
+        if sig_hist.sum() <= 0 and not bkg_hists:
+            continue
+        templates[category] = {
+            "sig_hist": sig_hist,
+            "sig_err": sig_err,
+            "bkg_hists": bkg_hists,
+            "bkg_errs": bkg_errs,
+            "bins": bins,
+        }
+    if not templates:
+        raise RuntimeError("No non-empty W-topology category templates were built.")
+    return templates
 
-    Each background group gets an independent normalization uncertainty.
-    All samples get Barlow-Beeston MC statistical uncertainties (staterror).
-    Signal is the POI (mu).
+
+# ----------------------------------------------------------------------------
+# pyhf model
+# ----------------------------------------------------------------------------
+
+def _build_channel_samples(sig_hist, sig_err, bkg_hists, bkg_errs,
+                           norm_uncertainty, staterror_mode, channel_name):
+    """Build pyhf samples for one channel.
+
+    staterror_mode:
+      'shared'     — one HistFactory-convention staterror per channel, shared
+                     by all samples (per-bin gammas on the total MC).
+      'per-sample' — independent staterror per sample (legacy v8 behaviour).
+      'off'        — no MC statistical nuisance parameters.
+    Background normsys names are shared across channels so each process group
+    has one correlated normalization nuisance.
     """
-    import pyhf
-
-    # Ensure no negative/zero bins (pyhf requires positive expected rates)
     sig_hist = np.maximum(sig_hist, 1e-6)
     sig_err = np.maximum(sig_err, 1e-6)
+    shared_name = f"staterror_{channel_name}"
 
-    samples = []
+    sig_modifiers = [{"name": "mu", "type": "normfactor", "data": None}]
+    if staterror_mode == "shared":
+        sig_modifiers.append({"name": shared_name, "type": "staterror", "data": sig_err.tolist()})
+    elif staterror_mode == "per-sample":
+        sig_modifiers.append({"name": f"staterror_sig_{channel_name}", "type": "staterror",
+                              "data": sig_err.tolist()})
+    samples = [{"name": "signal", "data": sig_hist.tolist(), "modifiers": sig_modifiers}]
 
-    # Signal sample with MC stat uncertainty
-    sig_modifiers = [
-        {"name": "mu", "type": "normfactor", "data": None},
-    ]
-    if use_staterror:
-        sig_modifiers.append({"name": "staterror_sig", "type": "staterror", "data": sig_err.tolist()})
-    samples.append({
-        "name": "signal",
-        "data": sig_hist.tolist(),
-        "modifiers": sig_modifiers,
-    })
-
-    # Background samples with normalization + MC stat systematics
     for group_name, hist in bkg_hists.items():
         hist = np.maximum(hist, 1e-6)
         err = np.maximum(bkg_errs.get(group_name, np.zeros_like(hist)), 1e-6)
@@ -152,22 +245,36 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
                 "data": {"hi": 1.0 + norm_uncertainty, "lo": 1.0 - norm_uncertainty},
             },
         ]
-        if use_staterror:
-            modifiers.append({"name": f"staterror_{group_name}", "type": "staterror", "data": err.tolist()})
-        samples.append({
-            "name": group_name,
-            "data": hist.tolist(),
-            "modifiers": modifiers,
-        })
+        if staterror_mode == "shared":
+            modifiers.append({"name": shared_name, "type": "staterror", "data": err.tolist()})
+        elif staterror_mode == "per-sample":
+            modifiers.append({"name": f"staterror_{group_name}_{channel_name}",
+                              "type": "staterror", "data": err.tolist()})
+        samples.append({"name": group_name, "data": hist.tolist(), "modifiers": modifiers})
+    return samples
 
-    spec = {
+
+def build_pyhf_spec(channel_payloads, norm_uncertainty=0.01, staterror_mode="shared"):
+    """Build a single- or multi-channel pyhf spec.
+
+    channel_payloads: dict channel_name -> {sig_hist, sig_err, bkg_hists, bkg_errs}
+    """
+    channels = []
+    observations = []
+    for channel_name, payload in channel_payloads.items():
+        channels.append({
+            "name": channel_name,
+            "samples": _build_channel_samples(
+                payload["sig_hist"], payload["sig_err"],
+                payload["bkg_hists"], payload["bkg_errs"],
+                norm_uncertainty, staterror_mode, channel_name,
+            ),
+        })
+        observations.append({"name": channel_name, "data": []})
+
+    return {
         "version": "1.0.0",
-        "channels": [
-            {
-                "name": "bdt_score",
-                "samples": samples,
-            }
-        ],
+        "channels": channels,
         "measurements": [
             {
                 "name": "signal_strength",
@@ -179,96 +286,140 @@ def build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty=0.
                 },
             }
         ],
-        "observations": [
-            {
-                "name": "bdt_score",
-                "data": [],  # filled by Asimov or observed
-            }
-        ],
+        "observations": observations,
     }
 
-    return spec
 
+# ----------------------------------------------------------------------------
+# Fitting
+# ----------------------------------------------------------------------------
 
-def fit_asimov(spec, sig_hist, bkg_hists):
-    """Run Asimov fit: generate expected data at mu=1 and fit."""
+def _set_backend(prefer_minuit=True):
+    """Select the pyhf backend/optimizer; report which error method is active."""
     import pyhf
-    pyhf.set_backend("numpy")
+    if prefer_minuit:
+        try:
+            import iminuit  # noqa: F401
+            pyhf.set_backend("numpy", "minuit")
+            return "minuit-hesse"
+        except ImportError:
+            print("[warn] iminuit not available; using scipy + finite-difference Hessian")
+    pyhf.set_backend("numpy", "scipy")
+    return "fd-hessian"
 
-    # Build Asimov data (sum of signal + all backgrounds at nominal)
-    total = sig_hist.copy()
-    for h in bkg_hists.values():
-        total += h
-    spec["observations"][0]["data"] = total.tolist()
 
-    ws = pyhf.Workspace(spec)
-    model = ws.model()
-    data = total.tolist() + model.config.auxdata
+def _fd_hessian_errors(model, data, bestfit):
+    """Finite-difference Hessian fallback for parameter uncertainties."""
+    import pyhf
 
-    # MLE fit
-    bestfit, twice_nll_val = pyhf.infer.mle.fit(
-        data, model, return_fitted_val=True
-    )
-    bestfit = np.asarray(bestfit)
-
-    # Compute uncertainties via numerical Hessian of NLL
-    def nll_func(pars):
-        pars_tensor = pyhf.tensorlib.astensor(pars)
-        val = pyhf.infer.mle.twice_nll(pars_tensor, data, model)
+    def nll(pars):
+        val = pyhf.infer.mle.twice_nll(pyhf.tensorlib.astensor(pars), data, model)
         return float(np.asarray(val).item()) / 2.0
 
     n = len(bestfit)
     eps = 1e-4
     hessian = np.zeros((n, n))
-    f0 = nll_func(bestfit)
     for i in range(n):
         for j in range(i, n):
-            pars_pp = bestfit.copy()
-            pars_pp[i] += eps
-            pars_pp[j] += eps
-            pars_pm = bestfit.copy()
-            pars_pm[i] += eps
-            pars_pm[j] -= eps
-            pars_mp = bestfit.copy()
-            pars_mp[i] -= eps
-            pars_mp[j] += eps
-            pars_mm = bestfit.copy()
-            pars_mm[i] -= eps
-            pars_mm[j] -= eps
-            hessian[i, j] = (nll_func(pars_pp) - nll_func(pars_pm) - nll_func(pars_mp) + nll_func(pars_mm)) / (4 * eps * eps)
-            hessian[j, i] = hessian[i, j]
-
+            pp, pm, mp, mm = (bestfit.copy() for _ in range(4))
+            pp[i] += eps; pp[j] += eps
+            pm[i] += eps; pm[j] -= eps
+            mp[i] -= eps; mp[j] += eps
+            mm[i] -= eps; mm[j] -= eps
+            hessian[i, j] = hessian[j, i] = (
+                nll(pp) - nll(pm) - nll(mp) + nll(mm)
+            ) / (4 * eps * eps)
     try:
         cov = np.linalg.inv(hessian)
-        errors = np.sqrt(np.maximum(np.diag(cov), 0))
-    except np.linalg.LinAlgError:
-        errors = np.zeros(n)
+    except np.linalg.LinAlgError as exc:
+        raise RuntimeError(
+            "Finite-difference Hessian is singular; parameter uncertainties "
+            "unavailable. Install iminuit (Key4hep env) for MINUIT errors."
+        ) from exc
+    diag = np.diag(cov)
+    if np.any(diag <= 0):
+        raise RuntimeError(
+            "Finite-difference Hessian has non-positive curvature; "
+            "uncertainties invalid."
+        )
+    return np.sqrt(diag)
+
+
+def fit_asimov(spec, channel_totals, error_method):
+    """Asimov fit: expected data = nominal signal + background per channel."""
+    import pyhf
+
+    spec = json.loads(json.dumps(spec))
+    for observation, total in zip(spec["observations"], channel_totals):
+        observation["data"] = np.asarray(total, dtype=float).tolist()
+
+    ws = pyhf.Workspace(spec)
+    model = ws.model()
+    data = ws.data(model)
+
+    if error_method == "minuit-hesse":
+        result = np.asarray(pyhf.infer.mle.fit(data, model, return_uncertainties=True))
+        bestfit, errors = result[:, 0], result[:, 1]
+    else:
+        bestfit = np.asarray(pyhf.infer.mle.fit(data, model))
+        errors = _fd_hessian_errors(model, data, bestfit)
 
     mu_idx = model.config.poi_index
-    mu_hat = float(bestfit[mu_idx])
-    mu_err = float(errors[mu_idx])
-
-    # All parameter results
-    par_names = model.config.par_names
-    fit_results = {}
-    for i, name in enumerate(par_names):
-        fit_results[name] = {
-            "value": float(bestfit[i]),
-            "error": float(errors[i]),
-        }
-
-    return mu_hat, mu_err, fit_results
+    fit_results = {
+        name: {"value": float(bestfit[i]), "error": float(errors[i])}
+        for i, name in enumerate(model.config.par_names)
+    }
+    return float(bestfit[mu_idx]), float(errors[mu_idx]), fit_results, (model, data)
 
 
-def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01, use_staterror=True):
-    """Scan BDT cuts for a fixed fit granularity.
+def profile_scan_mu(model, data, mu_hat, mu_err, n_points=21, width_sigma=2.5):
+    """1D profile-likelihood scan of mu to validate the parabolic error.
 
-    The paper comparison between "counting" and "shape" fits should use a true
-    single-bin model after the threshold cut. `fit_nbins=1` implements that
-    counting baseline, while larger values can be used for shape studies.
+    Returns dict with scan points and the +/- 1 sigma crossings of
+    2*[NLL(mu) - NLL(mu_hat)] = 1.
     """
     import pyhf
 
+    _, nll_hat = pyhf.infer.mle.fit(data, model, return_fitted_val=True)
+    nll_hat = float(np.asarray(nll_hat).item())
+
+    poi_bounds = model.config.suggested_bounds()[model.config.poi_index]
+    lo = max(poi_bounds[0], mu_hat - width_sigma * mu_err)
+    hi = min(poi_bounds[1], mu_hat + width_sigma * mu_err)
+    mu_values = np.linspace(lo, hi, n_points)
+    q_values = []
+    for mu_test in mu_values:
+        _, twice_nll = pyhf.infer.mle.fixed_poi_fit(
+            float(mu_test), data, model, return_fitted_val=True,
+        )
+        q_values.append(float(np.asarray(twice_nll).item()) - nll_hat)
+    q_values = np.asarray(q_values)
+
+    def crossing(side):
+        mask = mu_values > mu_hat if side > 0 else mu_values < mu_hat
+        xs, qs = mu_values[mask], q_values[mask]
+        if side < 0:
+            xs, qs = xs[::-1], qs[::-1]
+        for i in range(len(xs) - 1):
+            if (qs[i] - 1.0) * (qs[i + 1] - 1.0) <= 0:
+                x0, x1, q0, q1 = xs[i], xs[i + 1], qs[i], qs[i + 1]
+                if q1 == q0:
+                    return float(x0)
+                return float(x0 + (1.0 - q0) * (x1 - x0) / (q1 - q0))
+        return None
+
+    up, down = crossing(+1), crossing(-1)
+    return {
+        "mu_values": mu_values.tolist(),
+        "twice_delta_nll": q_values.tolist(),
+        "sigma_up": (up - mu_hat) if up is not None else None,
+        "sigma_down": (mu_hat - down) if down is not None else None,
+    }
+
+
+def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01,
+                 staterror_mode="shared", error_method="minuit-hesse"):
+    """Single-bin counting reference: scan BDT thresholds."""
     if cuts is None:
         coarse_cuts = np.arange(0.0, 0.90, 0.05)
         fine_cuts = np.arange(0.90, 1.00, 0.01)
@@ -279,20 +430,20 @@ def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01, use_staterro
         sig_hist, sig_err, bkg_hists, bkg_errs, bins = build_templates(
             df, nbins=fit_nbins, bdt_cut=cut,
         )
-
         n_sig = sig_hist.sum()
         n_bkg = sum(h.sum() for h in bkg_hists.values())
-
         if n_sig < 1 or n_bkg < 1:
             continue
 
-        spec = build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, norm_uncertainty, use_staterror=use_staterror)
-
+        payload = {"bdt_score": {"sig_hist": sig_hist, "sig_err": sig_err,
+                                 "bkg_hists": bkg_hists, "bkg_errs": bkg_errs}}
+        spec = build_pyhf_spec(payload, norm_uncertainty, staterror_mode)
+        total = sig_hist + sum(bkg_hists.values())
         try:
-            mu_hat, mu_err, _ = fit_asimov(spec, sig_hist, bkg_hists)
+            mu_hat, mu_err, _, _ = fit_asimov(spec, [total], error_method)
             rel_err = mu_err / mu_hat if mu_hat > 0 else float("inf")
-        except Exception as e:
-            print(f"  cut={cut:.2f}: fit failed ({e})")
+        except Exception as exc:
+            print(f"  cut={cut:.2f}: fit failed ({exc})")
             continue
 
         results.append({
@@ -306,14 +457,18 @@ def scan_bdt_cut(df, cuts=None, fit_nbins=1, norm_uncertainty=0.01, use_staterro
             "mu_err": mu_err,
             "rel_uncertainty": rel_err,
         })
-
         print(f"  cut={cut:.2f}: S={n_sig:.0f}, B={n_bkg:.0f}, "
-              f"S/√B={n_sig/np.sqrt(n_bkg):.1f}, δμ/μ={rel_err*100:.2f}%")
+              f"S/sqrt(B)={n_sig/np.sqrt(n_bkg):.1f}, dmu/mu={rel_err*100:.2f}%")
 
     return results
 
 
-def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, bins, shape_rel_unc_pct=None):
+# ----------------------------------------------------------------------------
+# Plots
+# ----------------------------------------------------------------------------
+
+def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists,
+                   bins, shape_rel_unc_pct=None, profile_scan=None):
     """Generate fit diagnostic plots."""
     import matplotlib
     matplotlib.use("Agg")
@@ -368,12 +523,10 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
         fig.savefig(plots_dir / "bdt_cut_scan.png", dpi=150)
         plt.close(fig)
 
-    # 2. Template shapes at the final 20-bin working point
+    # 2. Template shapes at the final working point
     fig, ax = plt.subplots(figsize=(7.6, 5.4))
-    bin_centers = 0.5 * (bins[:-1] + bins[1:])
     bin_width = bins[1] - bins[0]
 
-    # Use a stable plotting order so the legend and stack read cleanly.
     preferred_order = ["tautau", "ZH_other", "qq", "ZZ", "WW"]
     bkg_labels = [label for label in preferred_order if label in bkg_hists]
     bkg_arrays = [np.asarray(bkg_hists[label], dtype=float) for label in bkg_labels]
@@ -390,15 +543,8 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     legend_labels = []
     for label, arr in zip(bkg_labels, bkg_arrays):
         bars = ax.bar(
-            bins[:-1],
-            arr,
-            width=bin_width,
-            align="edge",
-            bottom=cumulative,
-            color=color_map[label],
-            edgecolor="white",
-            linewidth=0.45,
-            alpha=0.92,
+            bins[:-1], arr, width=bin_width, align="edge", bottom=cumulative,
+            color=color_map[label], edgecolor="white", linewidth=0.45, alpha=0.92,
         )
         cumulative += arr
         legend_handles.append(bars[0])
@@ -406,60 +552,25 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
 
     total_bkg = cumulative.copy()
     total_bkg_handle = ax.step(
-        bins[:-1],
-        total_bkg,
-        where="post",
-        color="#1F2D3A",
-        linewidth=1.4,
-        alpha=0.95,
-        label="Total background",
+        bins[:-1], total_bkg, where="post",
+        color="#1F2D3A", linewidth=1.4, alpha=0.95, label="Total background",
     )[0]
 
     raw_scale = (0.18 * total_bkg.max() / sig_hist.max()) if sig_hist.sum() > 0 and total_bkg.max() > 0 else 1.0
     sig_scale = _nice_scale_factor(raw_scale)
     sig_handle = ax.bar(
-        bins[:-1],
-        sig_hist * sig_scale,
-        width=bin_width,
-        align="edge",
-        fill=False,
-        edgecolor="#D62728",
-        linewidth=1.8,
-        linestyle="-",
-        label=f"Signal × {sig_scale}",
-        zorder=5,
+        bins[:-1], sig_hist * sig_scale, width=bin_width, align="edge",
+        fill=False, edgecolor="#D62728", linewidth=1.8, linestyle="-",
+        label=f"Signal x {sig_scale}", zorder=5,
     )[0]
 
     ax.set_ylabel(f"Events / {bin_width:.2f}")
     ax.set_xlabel("BDT score")
-    ax.set_title("20-bin BDT templates used in the profile-likelihood fit")
-    ax.text(
-        0.03,
-        0.95,
-        r'$\mathbf{FCC\text{-}ee}$ Simulation',
-        transform=ax.transAxes,
-        fontsize=10,
-        va='top',
-        fontstyle='italic',
-    )
-    ax.text(
-        0.03,
-        0.89,
-        r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
-        transform=ax.transAxes,
-        fontsize=9,
-        va='top',
-    )
-    ax.text(
-        0.97,
-        0.95,
-        "20 bins in [0, 1]",
-        transform=ax.transAxes,
-        fontsize=9,
-        va="top",
-        ha="right",
-        color="#334455",
-    )
+    ax.set_title(f"{len(sig_hist)}-bin BDT templates used in the profile-likelihood fit")
+    ax.text(0.03, 0.95, r'$\mathbf{FCC\text{-}ee}$ Simulation',
+            transform=ax.transAxes, fontsize=10, va='top', fontstyle='italic')
+    ax.text(0.03, 0.89, r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
+            transform=ax.transAxes, fontsize=9, va='top')
     ax.set_yscale("log")
     ax.set_ylim(bottom=0.1, top=max(total_bkg.max(), (sig_hist * sig_scale).max()) * 12.0)
     ax.set_xlim(0.0, 1.0)
@@ -469,239 +580,282 @@ def make_fit_plots(output_dir, scan_results, best_result, sig_hist, bkg_hists, b
     ax.yaxis.set_minor_formatter(NullFormatter())
     ax.grid(axis="y", which="major", alpha=0.22, linewidth=0.8)
     ax.grid(axis="y", which="minor", alpha=0.10, linewidth=0.5)
-    ax.tick_params(axis="y", which="major", labelsize=9)
-    ax.tick_params(axis="y", which="minor", length=2.5)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.legend(
         [sig_handle, total_bkg_handle, *legend_handles[::-1]],
-        [f"Signal × {sig_scale}", "Total background", *legend_labels[::-1]],
-        fontsize=8.3,
-        ncol=3,
-        frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.02),
-        columnspacing=1.1,
-        handlelength=2.4,
+        [f"Signal x {sig_scale}", "Total background", *legend_labels[::-1]],
+        fontsize=8.3, ncol=3, frameon=False, loc="upper center",
+        bbox_to_anchor=(0.5, 1.02), columnspacing=1.1, handlelength=2.4,
     )
-
     fig.tight_layout()
     fig.savefig(plots_dir / "fit_templates.pdf", dpi=170)
     fig.savefig(plots_dir / "fit_templates.png", dpi=170)
     plt.close(fig)
 
-    # 3. Rank-ordered BDT bins (highest score to lowest score)
+    # 3. Rank-ordered BDT bins with purity panel
     rank_order = np.arange(len(sig_hist))[::-1]
     rank_bins = np.arange(1, len(sig_hist) + 1)
     sig_rank = sig_hist[rank_order]
     bkg_rank_arrays = [arr[rank_order] for arr in bkg_arrays]
     bkg_rank_colors = [color_map[label] for label in bkg_labels]
-    total_rank = np.sum(np.asarray(bkg_rank_arrays), axis=0)
+    total_rank = np.sum(np.asarray(bkg_rank_arrays), axis=0) if bkg_rank_arrays else np.zeros_like(sig_rank)
 
     fig, (ax_top, ax_bottom) = plt.subplots(
-        2,
-        1,
-        figsize=(7.4, 6.6),
-        sharex=True,
+        2, 1, figsize=(7.4, 6.6), sharex=True,
         gridspec_kw={"height_ratios": [3.0, 1.15], "hspace": 0.05},
     )
-
     cumulative = np.zeros_like(rank_bins, dtype=float)
     for label, arr, color in zip(bkg_labels, bkg_rank_arrays, bkg_rank_colors):
-        ax_top.bar(
-            rank_bins,
-            arr,
-            bottom=cumulative,
-            width=0.90,
-            color=color,
-            alpha=0.88,
-            label=f"Bkg: {label}",
-            linewidth=0.0,
-        )
+        ax_top.bar(rank_bins, arr, bottom=cumulative, width=0.90,
+                   color=color, alpha=0.88, label=f"Bkg: {label}", linewidth=0.0)
         cumulative += arr
-
-    sig_scale_rank = sig_scale
     ax_top.step(
         np.r_[rank_bins, rank_bins[-1] + 1] - 0.5,
-        np.r_[sig_rank * sig_scale_rank, sig_rank[-1] * sig_scale_rank],
-        where="post",
-        color="black",
-        linewidth=2.0,
-        label=f"Signal (x{sig_scale_rank})",
+        np.r_[sig_rank * sig_scale, sig_rank[-1] * sig_scale],
+        where="post", color="black", linewidth=2.0, label=f"Signal (x{sig_scale})",
     )
     ax_top.set_ylabel("Events / rank bin")
     ax_top.set_title("Rank-ordered BDT bins")
     ax_top.set_yscale("log")
     ax_top.set_ylim(bottom=0.1)
-    ax_top.yaxis.set_major_locator(LogLocator(base=10.0, numticks=12))
-    ax_top.yaxis.set_minor_locator(LogLocator(base=10.0, subs=np.arange(2, 10), numticks=120))
-    ax_top.yaxis.set_minor_formatter(NullFormatter())
-    ax_top.grid(axis="y", which="major", alpha=0.24, linewidth=0.8)
-    ax_top.grid(axis="y", which="minor", alpha=0.14, linewidth=0.55)
-    ax_top.tick_params(axis="y", which="major", labelsize=9)
-    ax_top.tick_params(axis="y", which="minor", length=2.5)
     ax_top.legend(fontsize=8.6, ncol=2, frameon=False, loc="upper center")
-    ax_top.text(
-        0.03,
-        0.95,
-        r'$\mathbf{FCC\text{-}ee}$ Simulation',
-        transform=ax_top.transAxes,
-        fontsize=10,
-        va='top',
-        fontstyle='italic',
-    )
-    ax_top.text(
-        0.03,
-        0.89,
-        r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
-        transform=ax_top.transAxes,
-        fontsize=9,
-        va='top',
-    )
+    ax_top.text(0.03, 0.95, r'$\mathbf{FCC\text{-}ee}$ Simulation',
+                transform=ax_top.transAxes, fontsize=10, va='top', fontstyle='italic')
+    ax_top.text(0.03, 0.89, r'$\sqrt{s}=240$ GeV, $10.8\,\mathrm{ab}^{-1}$',
+                transform=ax_top.transAxes, fontsize=9, va='top')
 
-    purity = np.divide(sig_rank, sig_rank + total_rank, out=np.zeros_like(sig_rank), where=(sig_rank + total_rank) > 0)
+    purity = np.divide(sig_rank, sig_rank + total_rank,
+                       out=np.zeros_like(sig_rank), where=(sig_rank + total_rank) > 0)
     ax_bottom.plot(rank_bins, purity, color="#2C7FB8", marker="o", markersize=3.8, linewidth=1.8)
     ax_bottom.set_ylabel(r"$S/(S+B)$")
     ax_bottom.set_xlabel("BDT rank bin (1 = highest score)")
     ax_bottom.set_ylim(0.0, min(1.0, max(0.15, purity.max() * 1.25 if len(purity) else 0.15)))
     ax_bottom.set_xlim(0.5, len(rank_bins) + 0.5)
-    ax_bottom.set_xticks(rank_bins[::2] if len(rank_bins) > 10 else rank_bins)
     ax_bottom.grid(axis="y", alpha=0.22)
-    ax_bottom.text(
-        0.02,
-        0.92,
-        "Signal purity by ranked bin",
-        transform=ax_bottom.transAxes,
-        fontsize=9,
-        va="top",
-    )
-
     fig.tight_layout()
     fig.savefig(plots_dir / "bdt_score_rank.pdf", dpi=150)
     fig.savefig(plots_dir / "bdt_score_rank.png", dpi=150)
     plt.close(fig)
 
+    # 4. Profile likelihood scan of mu
+    if profile_scan is not None:
+        fig, ax = plt.subplots(figsize=(6.0, 4.4))
+        ax.plot(profile_scan["mu_values"], profile_scan["twice_delta_nll"],
+                color="#2C7FB8", marker="o", markersize=3.5, linewidth=1.6)
+        ax.axhline(1.0, color="#888888", linestyle="--", linewidth=1.0)
+        ax.set_xlabel(r"$\mu$")
+        ax.set_ylabel(r"$2\,\Delta\mathrm{NLL}$")
+        ax.set_title("Profile likelihood scan")
+        up, down = profile_scan.get("sigma_up"), profile_scan.get("sigma_down")
+        if up is not None and down is not None:
+            ax.text(0.03, 0.95, rf"$+1\sigma$ = {up:.5f}, $-1\sigma$ = {down:.5f}",
+                    transform=ax.transAxes, fontsize=9, va="top")
+        ax.grid(alpha=0.25)
+        fig.tight_layout()
+        fig.savefig(plots_dir / "mu_profile_scan.pdf", dpi=150)
+        fig.savefig(plots_dir / "mu_profile_scan.png", dpi=150)
+        plt.close(fig)
+
     print(f"  Fit plots saved to {plots_dir}/")
 
+
+# ----------------------------------------------------------------------------
+# Main
+# ----------------------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Profile likelihood fit for H->WW* measurement")
     parser.add_argument("--scores", type=str, default=None,
-                       help="Path to test_scores.csv from BDT training")
+                        help="Explicit path to a score CSV (kfold_scores.csv preferred)")
     parser.add_argument("--model-dir", type=str, default=None,
-                       help="Model directory (default: ml/models/xgboost_bdt)")
+                        help=f"Model directory (default: {DEFAULT_MODEL_DIR})")
     parser.add_argument("--nbins", type=int, default=20,
-                       help="Number of BDT score bins for template fit")
+                        help="Number of BDT score bins for the template fit")
     parser.add_argument("--norm-unc", type=float, default=0.01,
-                       help="Background normalization uncertainty (default: 1%%)")
+                        help="Background normalization uncertainty (default: 1%%)")
     parser.add_argument("--bdt-cut", type=float, default=None,
-                       help="Fixed BDT score cut (if None, scans for optimal)")
+                        help="Fixed BDT score cut for the shape fit (default: none)")
     parser.add_argument("--no-scan", action="store_true",
-                       help="Skip BDT cut scan, use --bdt-cut or 0.0")
-    parser.add_argument("--no-plots", action="store_true",
-                       help="Skip diagnostic plots")
-    parser.add_argument("--no-staterror", action="store_true",
-                       help="Disable Barlow-Beeston MC stat uncertainty (show physics-only precision)")
+                        help="Skip the 1-bin counting reference scan")
+    parser.add_argument("--no-plots", action="store_true", help="Skip diagnostic plots")
+    parser.add_argument("--no-profile-scan", action="store_true",
+                        help="Skip the 1D profile-likelihood scan of mu")
+    parser.add_argument("--staterror-mode", choices=["shared", "per-sample", "off"],
+                        default="shared",
+                        help="MC template statistical uncertainty treatment (default: shared)")
+    parser.add_argument("--category", choices=["all", "lep_on", "had_on"], default="all",
+                        help="Fit one reco W-topology category instead of the inclusive sample.")
+    parser.add_argument("--split-w-categories", action="store_true",
+                        help="Simultaneous two-channel fit split by reco W-topology category.")
     args = parser.parse_args()
 
-    # Locate scores file
-    if args.scores:
-        scores_path = Path(args.scores)
-    elif args.model_dir:
-        model_dir = Path(args.model_dir)
-        # Prefer kfold_scores.csv (all events, no scaling needed)
-        kfold_path = model_dir / "kfold_scores.csv"
-        test_path = model_dir / "test_scores.csv"
-        if kfold_path.exists():
-            scores_path = kfold_path
-        else:
-            scores_path = test_path
-    else:
-        model_dir = ANALYSIS_DIR / DEFAULT_MODEL_DIR
-        scores_path = model_dir / "test_scores.csv"
-        if not scores_path.exists():
-            scores_path = THIS_DIR / "models" / "xgboost_bdt_v6" / "test_scores.csv"
-
+    scores_path, model_dir = resolve_scores_path(args)
     print(f"Loading scores from {scores_path}")
-    df = load_scores(scores_path)
-    print(f"  {len(df)} events loaded ({(df['y_true']==1).sum()} signal, {(df['y_true']==0).sum()} background)")
+    df, score_source = load_scores(scores_path, model_dir)
+    df = ensure_score_categories(df)
+    print(f"  {len(df)} events loaded ({(df['y_true']==1).sum()} signal, "
+          f"{(df['y_true']==0).sum()} background)")
+
+    known_samples = set(SIGNAL_SAMPLES) | {
+        s for samples in FIT_BACKGROUND_GROUPS.values() for s in samples
+    }
+    unknown = sorted(set(df["sample_name"].unique()) - known_samples)
+    if unknown:
+        raise RuntimeError(
+            f"Score file contains samples not covered by the fit grouping: {unknown}. "
+            "Update FIT_BACKGROUND_GROUPS in ml_config.py."
+        )
+    absent = sorted(known_samples - set(df["sample_name"].unique()))
+    if absent:
+        print(
+            "[warn] expected samples with no scored events — legitimate only for "
+            "0-pass samples (e.g. tautau after the full selection); verify the "
+            f"treemaker/train logs if unexpected: {absent}"
+        )
 
     output_dir = scores_path.parent
+    error_method = _set_backend(prefer_minuit=True)
+    print(f"  Error method: {error_method}; staterror mode: {args.staterror_mode}")
 
-    # Weight scaling depends on input file type:
-    # - kfold_scores.csv: ALL events scored, no scaling needed
-    # - test_scores.csv: only test fraction, scale by 1/test_frac
-    if "kfold" in scores_path.name:
-        print("  Using k-fold scores (all events, no scaling)")
-    else:
-        test_frac = 0.30  # must match --test-size in train_xgboost_bdt.py
-        df["phys_weight"] = df["phys_weight"] / test_frac
-        print(f"  Scaling weights by 1/{test_frac} for test-set-only scores")
+    if args.split_w_categories and args.category != "all":
+        raise RuntimeError("--split-w-categories and --category are mutually exclusive.")
+    if args.category != "all":
+        before = len(df)
+        df = filter_reco_category(df, args.category)
+        print(f"  Category filter {args.category} ({CATEGORY_LABELS[args.category]}): "
+              f"{len(df)}/{before} events")
 
-    use_staterr = not args.no_staterror
+    if args.split_w_categories:
+        bdt_cut = args.bdt_cut if args.bdt_cut is not None else 0.0
+        print(f"\nSimultaneous {args.nbins}-bin category shape fit at BDT cut = {bdt_cut:.2f}:")
+        templates = build_templates_by_category(df, nbins=args.nbins, bdt_cut=bdt_cut)
 
-    # Single-bin counting scan for the cut-and-count reference.
+        payloads = {f"bdt_score_{cat}": p for cat, p in templates.items()}
+        channel_totals = []
+        category_summary = {}
+        for cat, payload in templates.items():
+            total = payload["sig_hist"] + sum(payload["bkg_hists"].values())
+            channel_totals.append(total)
+            n_sig = float(payload["sig_hist"].sum())
+            n_bkg = float(sum(h.sum() for h in payload["bkg_hists"].values()))
+            category_summary[cat] = {
+                "label": CATEGORY_LABELS[cat],
+                "n_signal": n_sig,
+                "n_background": n_bkg,
+                "bkg_yields": {k: float(v.sum()) for k, v in payload["bkg_hists"].items()},
+            }
+            print(f"  {cat:6s} ({CATEGORY_LABELS[cat]}): S={n_sig:.0f}, B={n_bkg:.0f}")
+
+        spec = build_pyhf_spec(payloads, args.norm_unc, args.staterror_mode)
+        mu_hat, mu_err, fit_results, _ = fit_asimov(spec, channel_totals, error_method)
+        rel_unc = mu_err / mu_hat if mu_hat > 0 else float("inf")
+
+        floor_spec = build_pyhf_spec(payloads, args.norm_unc, "off")
+        floor_mu, floor_err, _, _ = fit_asimov(floor_spec, channel_totals, error_method)
+        floor_rel = floor_err / floor_mu if floor_mu > 0 else float("inf")
+
+        print(f"\n  === CATEGORY RESULT ===")
+        print(f"  mu_hat = {mu_hat:.4f} +/- {mu_err:.5f}")
+        print(f"  Relative uncertainty: {rel_unc*100:.3f}%")
+        print(f"  Physics-only floor (no MC-stat nuisances): {floor_rel*100:.3f}%")
+
+        result = {
+            "fit_mode": "simultaneous_reco_w_categories",
+            "score_source": score_source,
+            "error_method": error_method,
+            "staterror_mode": args.staterror_mode,
+            "bdt_cut": bdt_cut,
+            "nbins": args.nbins,
+            "norm_uncertainty": args.norm_unc,
+            "mu_hat": mu_hat,
+            "mu_err": mu_err,
+            "relative_uncertainty_pct": rel_unc * 100,
+            "physics_only_mu_hat": floor_mu,
+            "physics_only_mu_err": floor_err,
+            "physics_only_rel_uncertainty_pct": floor_rel * 100,
+            "fit_parameters": fit_results,
+            "categories": category_summary,
+        }
+        result_path = output_dir / "fit_results_w_categories.json"
+        with open(result_path, "w") as handle:
+            json.dump(result, handle, indent=2)
+        print(f"\n  Category results saved to {result_path}")
+
+        if not args.no_plots:
+            for cat, payload in templates.items():
+                make_fit_plots(
+                    output_dir / f"category_{cat}", [], None,
+                    payload["sig_hist"], payload["bkg_hists"], payload["bins"],
+                )
+        return
+
+    # 1-bin counting reference scan
     if not args.no_scan:
         print("\nScanning BDT score cuts (1-bin counting reference):")
         scan_results = scan_bdt_cut(
-            df,
-            fit_nbins=1,
-            norm_uncertainty=args.norm_unc,
-            use_staterror=use_staterr,
+            df, fit_nbins=1, norm_uncertainty=args.norm_unc,
+            staterror_mode=args.staterror_mode, error_method=error_method,
         )
-
         if not scan_results:
-            print("ERROR: All BDT cuts failed. Check input data.")
-            return
-
+            raise RuntimeError("All BDT counting-scan fits failed. Check input data.")
         best_counting = min(scan_results, key=lambda r: r["rel_uncertainty"])
         print(f"\n  Best 1-bin counting cut: {best_counting['bdt_cut']:.2f}")
         print(f"  S={best_counting['n_sig']:.0f}, B={best_counting['n_bkg']:.0f}")
-        print(f"  Expected δμ/μ = {best_counting['rel_uncertainty']*100:.2f}%")
+        print(f"  Expected dmu/mu = {best_counting['rel_uncertainty']*100:.2f}%")
     else:
         scan_results = []
         best_counting = None
 
-    # The headline result is the full 20-bin shape fit. By default we keep the
-    # full BDT score range unless the caller explicitly requests a threshold.
+    # Headline shape fit over the full score range (unless a cut is requested)
     bdt_cut = args.bdt_cut if args.bdt_cut is not None else 0.0
-
-    # Final fit at chosen working point
     print(f"\nFinal {args.nbins}-bin shape fit at BDT cut = {bdt_cut:.2f}:")
-    sig_hist, sig_err, bkg_hists, bkg_errs, bins = build_templates(df, nbins=args.nbins, bdt_cut=bdt_cut)
-
+    sig_hist, sig_err, bkg_hists, bkg_errs, bins = build_templates(
+        df, nbins=args.nbins, bdt_cut=bdt_cut,
+    )
     n_sig = sig_hist.sum()
     n_bkg = sum(h.sum() for h in bkg_hists.values())
-    print(f"  Signal events: {n_sig:.0f}")
-    print(f"  Background events: {n_bkg:.0f}")
+    print(f"  Signal events: {n_sig:.1f}")
+    print(f"  Background events: {n_bkg:.1f}")
     for name, h in bkg_hists.items():
-        print(f"    {name}: {h.sum():.0f}")
+        print(f"    {name}: {h.sum():.1f}")
 
-    spec = build_pyhf_model(sig_hist, sig_err, bkg_hists, bkg_errs, args.norm_unc, use_staterror=use_staterr)
-    mu_hat, mu_err, fit_results = fit_asimov(spec, sig_hist, bkg_hists)
-
+    payload = {"bdt_score": {"sig_hist": sig_hist, "sig_err": sig_err,
+                             "bkg_hists": bkg_hists, "bkg_errs": bkg_errs}}
+    total = sig_hist + sum(bkg_hists.values())
+    spec = build_pyhf_spec(payload, args.norm_unc, args.staterror_mode)
+    mu_hat, mu_err, fit_results, (model, data) = fit_asimov(spec, [total], error_method)
     rel_unc = mu_err / mu_hat if mu_hat > 0 else float("inf")
-    physics_only_mu_hat = None
-    physics_only_mu_err = None
-    physics_only_rel_unc = None
-    if use_staterr:
-        physics_spec = build_pyhf_model(
-            sig_hist, sig_err, bkg_hists, bkg_errs, args.norm_unc, use_staterror=False,
-        )
-        physics_only_mu_hat, physics_only_mu_err, _ = fit_asimov(physics_spec, sig_hist, bkg_hists)
-        physics_only_rel_unc = (
-            physics_only_mu_err / physics_only_mu_hat if physics_only_mu_hat > 0 else float("inf")
-        )
+
+    floor_spec = build_pyhf_spec(payload, args.norm_unc, "off")
+    floor_mu, floor_err, _, _ = fit_asimov(floor_spec, [total], error_method)
+    floor_rel = floor_err / floor_mu if floor_mu > 0 else float("inf")
+
+    profile = None
+    if not args.no_profile_scan:
+        print("\n  Profile-likelihood scan of mu (validates the parabolic error):")
+        try:
+            profile = profile_scan_mu(model, data, mu_hat, mu_err)
+        except Exception as exc:
+            # The scan is a validation extra — never let it discard the fit.
+            print(f"  [warn] profile scan failed ({exc}); continuing without it")
+        if profile is not None:
+            up, down = profile.get("sigma_up"), profile.get("sigma_down")
+            if up is not None and down is not None:
+                print(f"    +1 sigma = {up:.5f}, -1 sigma = {down:.5f} "
+                      f"(HESSE: {mu_err:.5f})")
 
     print(f"\n  === RESULT ===")
-    print(f"  mu_hat = {mu_hat:.4f} +/- {mu_err:.4f}")
-    print(f"  Relative uncertainty: {rel_unc*100:.2f}%")
-    print(f"  => Expected precision on sigma_ZH x BR(H->WW*): {rel_unc*100:.2f}%")
-    if physics_only_rel_unc is not None:
-        print(f"  Physics-only floor (no MC stat nuisance terms): {physics_only_rel_unc*100:.2f}%")
+    print(f"  mu_hat = {mu_hat:.4f} +/- {mu_err:.5f}")
+    print(f"  Relative uncertainty: {rel_unc*100:.3f}%")
+    print(f"  => Expected precision on sigma_ZH x BR(H->WW*): {rel_unc*100:.3f}%")
+    print(f"  Physics-only floor (no MC-stat nuisances): {floor_rel*100:.3f}%")
 
-    # Save results
     result = {
+        "score_source": score_source,
+        "error_method": error_method,
+        "staterror_mode": args.staterror_mode,
+        "category": args.category,
         "bdt_cut": bdt_cut,
         "nbins": args.nbins,
         "scan_mode": "counting_1bin",
@@ -711,37 +865,36 @@ def main():
         "mu_hat": mu_hat,
         "mu_err": mu_err,
         "relative_uncertainty_pct": rel_unc * 100,
+        "physics_only_mu_hat": floor_mu,
+        "physics_only_mu_err": floor_err,
+        "physics_only_rel_uncertainty_pct": floor_rel * 100,
+        "physics_only_note": (
+            "Shape-fit precision with the same normalization systematics but "
+            "without MC template statistical nuisance parameters."
+        ),
         "fit_parameters": fit_results,
         "bkg_yields": {k: float(v.sum()) for k, v in bkg_hists.items()},
     }
-
-    if physics_only_rel_unc is not None:
-        result["physics_only_mu_hat"] = physics_only_mu_hat
-        result["physics_only_mu_err"] = physics_only_mu_err
-        result["physics_only_rel_uncertainty_pct"] = physics_only_rel_unc * 100
-        result["physics_only_note"] = (
-            "Shape-fit precision with the same normalization systematics but without "
-            "Barlow-Beeston MC-stat nuisance terms."
-        )
-
+    if profile is not None:
+        result["mu_profile_scan"] = {
+            "sigma_up": profile["sigma_up"],
+            "sigma_down": profile["sigma_down"],
+        }
     if scan_results:
         result["counting_scan_results"] = scan_results
 
-    result_path = output_dir / "fit_results.json"
-    with open(result_path, "w") as f:
-        json.dump(result, f, indent=2)
+    # Category-filtered fits get their own file so they can never be mistaken
+    # for (or clobber) the headline inclusive result.
+    suffix = "" if args.category == "all" else f"_{args.category}"
+    result_path = output_dir / f"fit_results{suffix}.json"
+    with open(result_path, "w") as handle:
+        json.dump(result, handle, indent=2)
     print(f"\n  Results saved to {result_path}")
 
-    # Plots
     if not args.no_plots:
         make_fit_plots(
-            output_dir,
-            scan_results,
-            best_counting,
-            sig_hist,
-            bkg_hists,
-            bins,
-            shape_rel_unc_pct=rel_unc * 100,
+            output_dir, scan_results, best_counting, sig_hist, bkg_hists, bins,
+            shape_rel_unc_pct=rel_unc * 100, profile_scan=profile,
         )
 
 

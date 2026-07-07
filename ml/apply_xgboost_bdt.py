@@ -112,6 +112,16 @@ def main():
         if missing:
             raise RuntimeError(f'{in_path} missing features required by the model: {missing}')
 
+        # Match the training-time sentinel handling: missingMass uses -999 for
+        # undefined cases and the model was trained with those set to 0.
+        if 'missingMass' in features:
+            mm = np.asarray(arrays['missingMass'], dtype='float64').copy()
+            n_sentinel = int((mm < -900).sum())
+            if n_sentinel > 0:
+                print(f'[fix] {sample}: replacing {n_sentinel} missingMass sentinel values with 0')
+                mm[mm < -900] = 0.0
+            arrays['missingMass'] = mm
+
         feature_matrix = np.column_stack([arrays[feat] for feat in features])
         scores = model.predict_proba(feature_matrix)[:, 1].astype('float32')
         arrays[args.score_branch] = scores

@@ -49,43 +49,58 @@ from ml_config import (
 # with ngen*fraction kept only as a fallback for older or malformed files.
 SAMPLE_INFO = {
     # Signal. The fraction is 1.0 for nominal runs and can be reduced for smoke tests.
-    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_HWW_ecm240"]},
-    "wzp6_ee_bbH_HWW_ecm240": {"xsec": 0.006350, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_HWW_ecm240"]},
-    "wzp6_ee_ccH_HWW_ecm240": {"xsec": 0.004988, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_HWW_ecm240"]},
-    "wzp6_ee_ssH_HWW_ecm240": {"xsec": 0.006403, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_HWW_ecm240"]},
+    "wzp6_ee_qqH_HWW_ecm240": {"xsec": 0.01140, "ngen": 1100000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_HWW_ecm240", 1.0)},
+    "wzp6_ee_bbH_HWW_ecm240": {"xsec": 0.006350, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_HWW_ecm240", 1.0)},
+    "wzp6_ee_ccH_HWW_ecm240": {"xsec": 0.004988, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_HWW_ecm240", 1.0)},
+    "wzp6_ee_ssH_HWW_ecm240": {"xsec": 0.006403, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_HWW_ecm240", 1.0)},
     # Diboson and 2-fermion backgrounds. The processed fraction is shared with
     # the FCCAnalyses stage through ml_config.py to keep the whole chain aligned.
-    "p8_ee_WW_ecm240":        {"xsec": 16.4385, "ngen": 373375386, "fraction": SAMPLE_PROCESSING_FRACTIONS["p8_ee_WW_ecm240"]},
-    "p8_ee_ZZ_ecm240":        {"xsec": 1.35899, "ngen": 209700000, "fraction": SAMPLE_PROCESSING_FRACTIONS["p8_ee_ZZ_ecm240"]},
-    "wz3p6_ee_uu_ecm240":     {"xsec": 11.9447, "ngen": 100790000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_uu_ecm240"]},
-    "wz3p6_ee_dd_ecm240":     {"xsec": 10.8037, "ngen": 100910000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_dd_ecm240"]},
-    "wz3p6_ee_cc_ecm240":     {"xsec": 11.0595, "ngen": 101290000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_cc_ecm240"]},
-    "wz3p6_ee_ss_ecm240":     {"xsec": 10.7725, "ngen": 102348636, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_ss_ecm240"]},
-    "wz3p6_ee_bb_ecm240":     {"xsec": 10.4299, "ngen": 99490000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_bb_ecm240"]},
-    "wz3p6_ee_tautau_ecm240": {"xsec": 4.6682, "ngen": 235800000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wz3p6_ee_tautau_ecm240"]},
+    "p8_ee_WW_ecm240":        {"xsec": 16.4385, "ngen": 373375386, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("p8_ee_WW_ecm240", 1.0)},
+    "p8_ee_ZZ_ecm240":        {"xsec": 1.35899, "ngen": 209700000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("p8_ee_ZZ_ecm240", 1.0)},
+    "wz3p6_ee_uu_ecm240":     {"xsec": 11.9447, "ngen": 100790000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_uu_ecm240", 1.0)},
+    "wz3p6_ee_dd_ecm240":     {"xsec": 10.8037, "ngen": 100910000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_dd_ecm240", 1.0)},
+    "wz3p6_ee_cc_ecm240":     {"xsec": 11.0595, "ngen": 101290000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_cc_ecm240", 1.0)},
+    "wz3p6_ee_ss_ecm240":     {"xsec": 10.7725, "ngen": 102348636, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_ss_ecm240", 1.0)},
+    "wz3p6_ee_bb_ecm240":     {"xsec": 10.4299, "ngen": 99490000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_bb_ecm240", 1.0)},
+    "wz3p6_ee_tautau_ecm240": {"xsec": 4.6682, "ngen": 235800000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wz3p6_ee_tautau_ecm240", 1.0)},
     # ZH with H->other. The processed fraction is shared with ml_config.py.
-    "wzp6_ee_qqH_Hbb_ecm240":    {"xsec": 0.03106, "ngen": 500000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hbb_ecm240"]},
-    "wzp6_ee_qqH_Htautau_ecm240": {"xsec": 0.003345, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Htautau_ecm240"]},
-    "wzp6_ee_qqH_Hgg_ecm240":    {"xsec": 0.004367, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hgg_ecm240"]},
-    "wzp6_ee_qqH_Hcc_ecm240":    {"xsec": 0.001542, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_Hcc_ecm240"]},
-    "wzp6_ee_qqH_HZZ_ecm240":    {"xsec": 0.001397, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_qqH_HZZ_ecm240"]},
-    "wzp6_ee_bbH_Hbb_ecm240":    {"xsec": 0.01731, "ngen": 100000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hbb_ecm240"]},
-    "wzp6_ee_bbH_Htautau_ecm240": {"xsec": 0.001864, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Htautau_ecm240"]},
-    "wzp6_ee_bbH_Hgg_ecm240":    {"xsec": 0.002433, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hgg_ecm240"]},
-    "wzp6_ee_bbH_Hcc_ecm240":    {"xsec": 0.0008591, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_Hcc_ecm240"]},
-    "wzp6_ee_bbH_HZZ_ecm240":    {"xsec": 0.0007782, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_bbH_HZZ_ecm240"]},
-    "wzp6_ee_ccH_Hbb_ecm240":    {"xsec": 0.01359, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hbb_ecm240"]},
-    "wzp6_ee_ccH_Htautau_ecm240": {"xsec": 0.001464, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Htautau_ecm240"]},
-    "wzp6_ee_ccH_Hgg_ecm240":    {"xsec": 0.001911, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hgg_ecm240"]},
-    "wzp6_ee_ccH_Hcc_ecm240":    {"xsec": 0.0006748, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_Hcc_ecm240"]},
-    "wzp6_ee_ccH_HZZ_ecm240":    {"xsec": 0.0006113, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ccH_HZZ_ecm240"]},
-    "wzp6_ee_ssH_Hbb_ecm240":    {"xsec": 0.01745, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hbb_ecm240"]},
-    "wzp6_ee_ssH_Htautau_ecm240": {"xsec": 0.001879, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Htautau_ecm240"]},
-    "wzp6_ee_ssH_Hgg_ecm240":    {"xsec": 0.002453, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hgg_ecm240"]},
-    "wzp6_ee_ssH_Hcc_ecm240":    {"xsec": 0.0008662, "ngen": 300000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_Hcc_ecm240"]},
-    "wzp6_ee_ssH_HZZ_ecm240":    {"xsec": 0.0007847, "ngen": 600000, "fraction": SAMPLE_PROCESSING_FRACTIONS["wzp6_ee_ssH_HZZ_ecm240"]},
+    "wzp6_ee_qqH_Hbb_ecm240":    {"xsec": 0.03106, "ngen": 500000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_Hbb_ecm240", 1.0)},
+    "wzp6_ee_qqH_Htautau_ecm240": {"xsec": 0.003345, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_Htautau_ecm240", 1.0)},
+    "wzp6_ee_qqH_Hgg_ecm240":    {"xsec": 0.004367, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_Hgg_ecm240", 1.0)},
+    "wzp6_ee_qqH_Hcc_ecm240":    {"xsec": 0.001542, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_Hcc_ecm240", 1.0)},
+    "wzp6_ee_qqH_HZZ_ecm240":    {"xsec": 0.001397, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_qqH_HZZ_ecm240", 1.0)},
+    "wzp6_ee_bbH_Hbb_ecm240":    {"xsec": 0.01731, "ngen": 100000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_Hbb_ecm240", 1.0)},
+    "wzp6_ee_bbH_Htautau_ecm240": {"xsec": 0.001864, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_Htautau_ecm240", 1.0)},
+    "wzp6_ee_bbH_Hgg_ecm240":    {"xsec": 0.002433, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_Hgg_ecm240", 1.0)},
+    "wzp6_ee_bbH_Hcc_ecm240":    {"xsec": 0.0008591, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_Hcc_ecm240", 1.0)},
+    "wzp6_ee_bbH_HZZ_ecm240":    {"xsec": 0.0007782, "ngen": 1000000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_bbH_HZZ_ecm240", 1.0)},
+    "wzp6_ee_ccH_Hbb_ecm240":    {"xsec": 0.01359, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_Hbb_ecm240", 1.0)},
+    "wzp6_ee_ccH_Htautau_ecm240": {"xsec": 0.001464, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_Htautau_ecm240", 1.0)},
+    "wzp6_ee_ccH_Hgg_ecm240":    {"xsec": 0.001911, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_Hgg_ecm240", 1.0)},
+    "wzp6_ee_ccH_Hcc_ecm240":    {"xsec": 0.0006748, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_Hcc_ecm240", 1.0)},
+    "wzp6_ee_ccH_HZZ_ecm240":    {"xsec": 0.0006113, "ngen": 1200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ccH_HZZ_ecm240", 1.0)},
+    "wzp6_ee_ssH_Hbb_ecm240":    {"xsec": 0.01745, "ngen": 200000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_Hbb_ecm240", 1.0)},
+    "wzp6_ee_ssH_Htautau_ecm240": {"xsec": 0.001879, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_Htautau_ecm240", 1.0)},
+    "wzp6_ee_ssH_Hgg_ecm240":    {"xsec": 0.002453, "ngen": 400000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_Hgg_ecm240", 1.0)},
+    "wzp6_ee_ssH_Hcc_ecm240":    {"xsec": 0.0008662, "ngen": 300000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_Hcc_ecm240", 1.0)},
+    "wzp6_ee_ssH_HZZ_ecm240":    {"xsec": 0.0007847, "ngen": 600000, "fraction": SAMPLE_PROCESSING_FRACTIONS.get("wzp6_ee_ssH_HZZ_ecm240", 1.0)},
 }
 INT_LUMI = 10.8e6  # pb^-1
+CATEGORY_BRANCHES = [
+    "deltaW_onShell",
+    "deltaW_onShell_ZWchi2",
+    "lepW_offshell_like",
+    "lepW_onshell_like",
+    "hadW_onshell_like",
+    "w_topology_category",
+]
+# Extra kinematic columns carried through to the score CSVs so offline studies
+# (e.g. ml/scan_zcand_windows.py) can re-window the fit without a treemaker rerun.
+SCORE_EXTRA_BRANCHES = [
+    "Zcand_p",
+    "Zcand_m",
+]
+SCORE_CARRY_BRANCHES = CATEGORY_BRANCHES + SCORE_EXTRA_BRANCHES
 
 
 def parse_args():
@@ -105,6 +120,15 @@ def parse_args():
                         help='Skip diagnostic plots')
     parser.add_argument('--kfold', type=int, default=5,
                         help='Number of folds for k-fold CV scoring (0 to disable)')
+    parser.add_argument(
+        '--category',
+        choices=['all', 'lep_on', 'had_on'],
+        default='all',
+        help=(
+            'Optional reco W-topology category filter: lep_on keeps '
+            'deltaW_onShell < 0, had_on keeps deltaW_onShell >= 0.'
+        ),
+    )
     return parser.parse_args()
 
 
@@ -134,15 +158,21 @@ def get_tree_status(root_file, tree_name):
     }
 
 
-def read_samples(input_dir, tree_name, sample_names, features, label):
+def read_samples(input_dir, tree_name, sample_names, features, label, extra_branches=None):
     """Read samples and compute physics-correct per-event weights."""
     frames = []
     input_dir = Path(input_dir)
+    requested = list(dict.fromkeys([*features, *(extra_branches or [])]))
     for sample in sample_names:
         root_path = input_dir / f'{sample}.root'
         if not root_path.exists():
-            print(f'[warn] missing sample: {root_path}')
-            continue
+            # A 0-pass sample still produces a file (with eventsSelected=0);
+            # a missing file means the treemaker did not run for this sample,
+            # and silently dropping it would corrupt the fit templates.
+            raise FileNotFoundError(
+                f'missing treemaker output: {root_path} — rerun the treemaker '
+                'for this tag (or restrict samples via LVQQ_ONLY_SAMPLES).'
+            )
 
         with uproot.open(root_path) as root_file:
             status = get_tree_status(root_file, tree_name)
@@ -162,8 +192,8 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
                 print(f'[info] {root_path} has tree "{tree_name}" but 0 entries, skipping')
                 continue
             available = set(tree.keys())
-            use_features = [f for f in features if f in available]
-            missing = [f for f in features if f not in available]
+            use_features = [f for f in requested if f in available]
+            missing = [f for f in requested if f not in available]
             if missing:
                 print(f'[warn] {root_path} missing branches: {missing}')
             frame = tree.arrays(use_features, library='pd')
@@ -202,6 +232,44 @@ def read_samples(input_dir, tree_name, sample_names, features, label):
     if not frames:
         raise RuntimeError('No input ntuples found for training.')
     return pd.concat(frames, ignore_index=True)
+
+
+def ensure_category_columns(df):
+    """Add stable reco W-topology category columns when older trees lack them."""
+    if 'w_topology_category' not in df.columns and 'deltaW_onShell' in df.columns:
+        df['w_topology_category'] = (df['deltaW_onShell'] >= 0).astype(float)
+    if 'lepW_offshell_like' not in df.columns and 'w_topology_category' in df.columns:
+        df['lepW_offshell_like'] = (df['w_topology_category'] > 0.5).astype(float)
+    if 'lepW_onshell_like' not in df.columns and 'w_topology_category' in df.columns:
+        df['lepW_onshell_like'] = (df['w_topology_category'] < 0.5).astype(float)
+    if 'hadW_onshell_like' not in df.columns and 'w_topology_category' in df.columns:
+        df['hadW_onshell_like'] = (df['w_topology_category'] > 0.5).astype(float)
+    return df
+
+
+def filter_reco_category(df, category):
+    """Apply a reco-level W-topology split without changing the physics weights."""
+    if category == 'all':
+        return df
+    if 'w_topology_category' not in df.columns:
+        raise RuntimeError(
+            'Requested category split, but w_topology_category is unavailable. '
+            'Rerun treemaker with the latest h_hww_lvqq.py.'
+        )
+    if category == 'lep_on':
+        mask = df['w_topology_category'] < 0.5
+        label = 'leptonic-W-on-shell-like'
+    elif category == 'had_on':
+        mask = df['w_topology_category'] >= 0.5
+        label = 'hadronic-W-on-shell-like'
+    else:
+        raise ValueError(f'Unknown category {category!r}')
+    before = len(df)
+    out = df.loc[mask].copy()
+    print(f'[category] {label}: kept {len(out)}/{before} events')
+    if out.empty:
+        raise RuntimeError(f'Category {category!r} is empty after filtering.')
+    return out
 
 
 def normalize_class_weights(w, y):
@@ -306,7 +374,10 @@ def fit_with_early_stopping(X_train, y_train, w_train, params, random_state, n_j
     model = xgb.XGBClassifier(**final_kwargs)
     model.fit(X_train, y_train, sample_weight=w_train, verbose=False)
 
-    val_score = model.predict_proba(X_val)[:, 1]
+    # Evaluate the validation AUC with the early-stopping model, which never
+    # trained on X_val; the retrained final model includes X_val, so scoring
+    # it there would not be a held-out check.
+    val_score = model_es.predict_proba(X_val)[:, 1]
     val_auc = roc_auc_score(y_val, val_score, sample_weight=w_val)
 
     evals_result = model_es.evals_result() if hasattr(model_es, 'evals_result') else {}
@@ -599,6 +670,9 @@ def kfold_score_all(X, y, w_phys, w_norm, full_df, best_params, n_folds=5, rando
         'bdt_score': scores,
         'sample_name': full_df['sample_name'].to_numpy(),
     })
+    for branch in SCORE_CARRY_BRANCHES:
+        if branch in full_df.columns:
+            kfold_df[branch] = full_df[branch].to_numpy()
     return kfold_df, overall_auc
 
 
@@ -619,11 +693,13 @@ def main():
     )
     print('Signal:')
     sig_df = read_samples(args.input_dir, args.tree_name,
-                          args.signal_samples, args.features, 1)
+                          args.signal_samples, args.features, 1, SCORE_CARRY_BRANCHES)
     print('Background:')
     bkg_df = read_samples(args.input_dir, args.tree_name,
-                          args.background_samples, args.features, 0)
+                          args.background_samples, args.features, 0, SCORE_CARRY_BRANCHES)
     full_df = pd.concat([sig_df, bkg_df], ignore_index=True)
+    full_df = ensure_category_columns(full_df)
+    full_df = filter_reco_category(full_df, args.category)
 
     # Use only features that exist in the data
     available_features = [f for f in args.features if f in full_df.columns]
@@ -692,7 +768,7 @@ def main():
         n_jobs=args.n_jobs,
         eval_metric=['logloss', 'auc'],
     )
-    print(f'  Validation AUC (held-out from training): {val_auc:.4f}')
+    print(f'  Validation AUC (early-stopping split, scored by the pre-retrain model): {val_auc:.4f}')
     print(f'  Trees kept after early stopping: {final_n_estimators}')
 
     train_score = model.predict_proba(X_train)[:, 1]
@@ -762,6 +838,7 @@ def main():
             if best_iteration is not None else best_params['n_estimators'],
         'weight_normalization': 'class-balanced',
         'validation_fraction': 0.20,
+        'reco_w_category': args.category,
     }
 
     model_path = output_dir / 'xgboost_bdt.json'
@@ -780,13 +857,17 @@ def main():
     ).sort_values(ascending=False)
     importance.to_csv(output_dir / 'feature_importance.csv', header=['importance'])
 
-    pd.DataFrame({
+    test_out = pd.DataFrame({
         'y_true': y_test.to_numpy(),
         'phys_weight': w_phys_test.to_numpy(),
         'norm_weight': w_test.to_numpy(),
         'bdt_score': test_score,
         'sample_name': full_df_test['sample_name'].to_numpy(),
-    }).to_csv(output_dir / 'test_scores.csv', index=False)
+    })
+    for branch in SCORE_CARRY_BRANCHES:
+        if branch in full_df_test.columns:
+            test_out[branch] = full_df_test[branch].to_numpy()
+    test_out.to_csv(output_dir / 'test_scores.csv', index=False)
 
     # Diagnostic plots
     if not args.no_plots:

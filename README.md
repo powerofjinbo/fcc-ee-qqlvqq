@@ -3,6 +3,36 @@
 This directory contains the standard FCC-ee semi-leptonic `H -> WW* -> lvqq`
 analysis workflow.
 
+## Current version: v_fable
+
+The nominal selection (single source of truth: `CUTFLOW_STAGES` in
+`ml_config.py`) has 6 hard cuts:
+
+1. `>= 1` lepton with `10 < p < 60 GeV`
+2. selected-lepton isolation `I < 0.20`
+3. veto extra isolated leptons with `p > 20 GeV`
+4. `10 < E_miss < 55 GeV`
+5. exclusive `N=4` Durham jets and `sqrt(d34) > 14 GeV`
+6. `min jet Nconst > 8`
+
+There is NO hard window on `Zcand_m` or `Zcand_p`: both are BDT inputs.
+Full profile-likelihood window scans (`ml/scan_zcand_windows.py`) showed
+every candidate window on either variable degrades the 20-bin shape-fit
+precision relative to no window (e.g. the former `40 < pZ < 60` cut:
+0.731% vs 0.595% without it). The BDT trains on the 26-feature core list;
+the treemaker keeps all extra branches so future retrainings do not need a
+treemaker rerun. The fit uses out-of-fold (`kfold_scores.csv`) scores, one
+shared staterror per channel, and MINUIT errors validated by a
+profile-likelihood scan.
+
+Full-statistics run (recommended, survives SSH disconnects):
+
+```bash
+./submit_v_fable_chain.sh          # Slurm dependency chain, or:
+mkdir -p logs/v_fable
+nohup ./run_v_fable_pipeline.sh > logs/v_fable/pipeline.log 2>&1 &   # local
+```
+
 ## Standard entry points
 
 You only need to interact with one script in normal use:
@@ -54,12 +84,12 @@ You only need to interact with one script in normal use:
   - Builds the binned signal/background templates from the BDT scores and
     runs the `pyhf` profile-likelihood fit.
   - Produces `fit_results.json` and the fit plots under
-    `ml/models/xgboost_bdt_v6/plots/`.
+    `ml/models/xgboost_bdt_<tag>/plots/` (e.g. `ml/models/xgboost_bdt_v_fable/plots/`).
 
 - `ml/scan_preselection_cuts.py`
   - Reads loose scanmaker ntuples and scans lepton, isolation, MET,
     missing-direction, `sqrt(d34)`, and asymmetric recoil-window thresholds.
-  - Produces CSV summaries and scan plots under `cut_scans/`.
+  - Produces CSV summaries and scan plots under `cut_scans_v_fable_baseline/`.
 
 - `paper/main.tex`
   - The note/paper source.
@@ -69,7 +99,8 @@ You only need to interact with one script in normal use:
 
 - `ml/regenerate_roc.py`
   - Convenience script to remake the ROC plot from saved outputs.
-  - Not required for the standard end-to-end workflow.
+  - Invoked automatically by the `plots` and `paper` targets of
+    `run_lvqq.py` (step_roc_plot); do not delete.
 
 ## Standard run order
 
@@ -104,8 +135,8 @@ python3 run_lvqq.py scans --signal-fraction 0.01 --background-fraction 0.0001
 ```
 
 The scan stage writes ROOT files to `output/h_hww_lvqq/scanmaker/ecm240/` and
-CSV/plot outputs to `cut_scans/`. The nominal `treemaker` output remains the
-baseline cut7-selected ntuple used for BDT training and fitting.
+CSV/plot outputs to `cut_scans_v_fable_baseline/`. The nominal `treemaker` output remains the
+baseline-selected ntuple used for BDT training and fitting.
 
 ## One-command run
 

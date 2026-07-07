@@ -9,7 +9,13 @@ import sys
 import math
 import ROOT
 
-from ml_config import DEFAULT_HISTMAKER_DIR, DEFAULT_PLOTS_DIR, SIGNAL_SAMPLES, ZH_OTHER_SAMPLES
+from ml_config import (
+    CUTFLOW_PLOT_LABELS,
+    DEFAULT_HISTMAKER_DIR,
+    DEFAULT_PLOTS_DIR,
+    SIGNAL_SAMPLES,
+    ZH_OTHER_SAMPLES,
+)
 
 # Suppress ROOT info messages
 ROOT.gROOT.SetBatch(True)
@@ -55,9 +61,14 @@ processes = [
     ("wzp6_ee_hadZH_HWW_ecm240", "ZH (H#rightarrowWW)", ROOT.kRed + 1, True),
 ]
 
+# Single source of truth for the cut sequence lives in ml_config.CUTFLOW_STAGES.
+CUT_LABELS = list(CUTFLOW_PLOT_LABELS)
+CUT_IDS = [f"cut{i}" for i in range(len(CUT_LABELS))]
+PERCENT_COL_WIDTH = 12
+
 # Histograms to plot: (name, xtitle, rebin, xmin, xmax, logy)
 histograms = [
-    ("cutFlow", "Cut stage", 1, -0.5, 10.5, True),
+    ("cutFlow", "", 1, 0.0, float(len(CUT_LABELS)), True),
     ("n_leptons_p10_p60", "Number of leptons with 10 < p < 60 GeV", 1, -0.5, 5.5, True),
     ("lepton_p", "Lepton momentum [GeV]", 4, 0, 150, False),
     ("lepton_p_after_cut1", "Lepton momentum after Cut 1 [GeV]", 4, 0, 150, False),
@@ -65,9 +76,11 @@ histograms = [
     ("lepton_iso_after_cut1", "Lepton isolation after Cut 1", 2, 0, 1, False),
     ("n_iso_leptons_p10", "Number of isolated leptons with p > 10 GeV", 1, -0.5, 5.5, True),
     ("n_iso_leptons_p10_after_cut1", "Isolated leptons with p > 10 GeV after Cut 1", 1, -0.5, 5.5, True),
+    ("n_iso_leptons_p10_p60_after_cut1", "Isolated leptons with 10 < p < 60 GeV after Cut 1", 1, -0.5, 5.5, True),
     ("n_iso_leptons_p10_after_cut2", "Isolated leptons with p > 10 GeV after Cut 2", 1, -0.5, 5.5, True),
-    ("n_extra_iso_leptons_p20", "Additional isolated leptons with p > 20 GeV", 1, -0.5, 5.5, True),
-    ("n_extra_iso_leptons_p20_after_cut1", "Additional isolated leptons with p > 20 GeV after Cut 1", 1, -0.5, 5.5, True),
+    ("n_extra_iso_leptons_p20", "Additional leptons with p > 20 GeV", 1, -0.5, 5.5, True),
+    ("n_extra_iso_leptons_p20_after_cut1", "Additional leptons with p > 20 GeV after Cut 1", 1, -0.5, 5.5, True),
+    ("extra_iso_lepton_p_after_cut2", "Additional lepton momentum after Cut 2 [GeV]", 2, 0, 120, False),
     ("missingEnergy_e", "Missing energy [GeV]", 4, 0, 150, False),
     ("missingEnergy_e_after_cut2", "Missing energy after Cut 2 [GeV]", 4, 0, 150, False),
     ("missingEnergy_e_after_cut3", "Missing energy after Cut 3 [GeV]", 4, 0, 150, False),
@@ -99,18 +112,34 @@ histograms = [
     ("sqrt_d34", "#sqrt{d_{34}} [GeV]", 2, 0, 40, False),
     ("Zcand_m", "m_{Z cand} [GeV]", 4, 0, 200, False),
     ("Zcand_p", "p_{Z cand} [GeV]", 4, 0, 120, False),
-    ("Zcand_p_afterZ", "p_{Z cand} after Z cut [GeV]", 4, 0, 120, False),
     ("Wstar_m", "m_{W*} [GeV]", 4, 0, 150, False),  # W* is off-shell, expect ~40 GeV
+    ("Whad_m", "m_{W_{had}} [GeV]", 4, 0, 150, False),
+    ("Whad_p", "p_{W_{had}} [GeV]", 4, 0, 150, False),
     ("deltaR_Wstar", "#DeltaR_{jj}^{W*}", 2, 0, 5, False),
     ("angle_Wstar_jj", "Opening angle of W* jets [rad]", 2, 0, 3.2, False),
     ("Wlep_m", "m_{W_{lep}} [GeV]", 4, 0, 200, False),
+    ("Wlep_p", "p_{W_{lep}} [GeV]", 4, 0, 200, False),
+    ("abs_Wlep_mW", "|m_{W_{lep}} - m_{W}| [GeV]", 4, 0, 160, False),
+    ("abs_Whad_mW", "|m_{W_{had}} - m_{W}| [GeV]", 4, 0, 160, False),
+    ("deltaW_onShell", "|m_{W_{lep}}-m_W| - |m_{W_{had}}-m_W| [GeV]", 4, -120, 120, False),
+    ("deltaW_onShell_ZWchi2", "#Delta W on-shell score, ZW-#chi^{2} pairing [GeV]", 4, -120, 120, False),
+    ("lepW_offshell_like", "Leptonic-W off-shell-like category", 1, -0.5, 1.5, True),
+    ("lepW_onshell_like", "Leptonic-W on-shell-like category", 1, -0.5, 1.5, True),
+    ("hadW_onshell_like", "Hadronic-W on-shell-like category", 1, -0.5, 1.5, True),
+    ("w_topology_category", "Reco W-topology category (0=lep-on, 1=had-on)", 1, -0.5, 1.5, True),
+    ("mW_min", "min(m_{W_{lep}}, m_{W_{had}}) [GeV]", 4, 0, 160, False),
+    ("mW_max", "max(m_{W_{lep}}, m_{W_{had}}) [GeV]", 4, 0, 200, False),
+    ("chi2_ZWpair", "Alternative Z/W pairing #chi^{2}", 2, 0, 50, False),
+    ("Zcand_m_ZWchi2", "m_{Z cand} from ZW-#chi^{2} pairing [GeV]", 4, 0, 200, False),
+    ("Zcand_p_ZWchi2", "p_{Z cand} from ZW-#chi^{2} pairing [GeV]", 4, 0, 120, False),
+    ("Whad_m_ZWchi2", "m_{W_{had}} from ZW-#chi^{2} pairing [GeV]", 4, 0, 150, False),
+    ("Whad_p_ZWchi2", "p_{W_{had}} from ZW-#chi^{2} pairing [GeV]", 4, 0, 150, False),
+    ("delta_pairing_Zcand_m", "|m_{Z}^{Z-priority}-m_{Z}^{ZW#chi^{2}}| [GeV]", 4, 0, 120, False),
+    ("delta_pairing_Whad_m", "|m_{Whad}^{Z-priority}-m_{Whad}^{ZW#chi^{2}}| [GeV]", 4, 0, 120, False),
     ("Hcand_m", "m_{H cand} [GeV]", 4, 0, 300, False),
-    ("Hcand_m_afterZp", "m_{H cand} (after Z mass and p cuts) [GeV]", 4, 0, 300, False),
-    ("Hcand_m_afterH", "m_{H cand} (after H cut) [GeV]", 4, 0, 300, False),
-    ("Hcand_m_final", "m_{H cand} (final) [GeV]", 4, 0, 300, False),
+    ("Hcand_m_ZWchi2", "m_{H cand} from ZW-#chi^{2} pairing [GeV]", 4, 0, 300, False),
     ("recoil_m", "Recoil mass [GeV]", 4, 50, 200, False),
-    ("recoil_m_afterZp", "Recoil mass (after Z mass and p cuts) [GeV]", 4, 50, 200, False),
-    ("recoil_m_afterH", "Recoil mass (after H cut) [GeV]", 4, 50, 200, False),
+    ("recoil_m_ZWchi2", "Recoil mass from ZW-#chi^{2} pairing [GeV]", 4, 50, 200, False),
     ("deltaZ", "|m_{jj} - m_{Z}| [GeV]", 4, 0, 50, False),
 ]
 
@@ -140,16 +169,42 @@ CUT_DIAGNOSTICS = [
         "label": "Cut 2: require selected-lepton isolation < 0.20",
     },
     {
+        "name": "cut2_lepton_isolation_right_tail",
+        "hist": "lepton_iso_after_cut1",
+        "xtitle": "Lepton isolation after Cut 1",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 1.0,
+        "logy": True,
+        "kind": "lt",
+        "value": 0.20,
+        "label": "Cut 2: keep I < 0.20; right tail is rejected",
+        "tail_norm_min": 0.20,
+        "tail_norm_max": 1.0,
+    },
+    {
         "name": "cut3_extra_lepton_veto",
         "hist": "n_extra_iso_leptons_p20",
-        "xtitle": "Number of additional isolated leptons with p > 20 GeV",
+        "xtitle": "Number of additional leptons with p > 20 GeV",
         "rebin": 1,
         "xmin": -0.5,
         "xmax": 5.5,
         "logy": True,
         "kind": "eq_bin",
         "value": 0,
-        "label": "Cut 3: veto additional isolated leptons above 20 GeV",
+        "label": "Cut 3: veto additional leptons above 20 GeV",
+    },
+    {
+        "name": "cut3_extra_lepton_momentum",
+        "hist": "extra_iso_lepton_p_after_cut2",
+        "xtitle": "Additional lepton momentum after Cut 2 [GeV]",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 120.0,
+        "logy": False,
+        "kind": "gt",
+        "value": 20.0,
+        "label": "Cut 3 veto threshold: additional lepton p > 20 GeV",
     },
     {
         "name": "cut4_missing_energy_window",
@@ -272,74 +327,61 @@ CUT_DIAGNOSTICS = [
         "label": "Cut 5 candidate: W* two-prong separation",
     },
     {
-        "name": "cut7_z_mass_window",
+        "name": "bdt_input_zcand_mass",
         "hist": "Zcand_m",
         "xtitle": "m_{Z cand} [GeV]",
         "rebin": 4,
         "xmin": 40.0,
         "xmax": 150.0,
         "logy": False,
-        "kind": "window",
-        "lo": 85.0,
-        "hi": 95.0,
-        "label": "Cut 7: require 85 < m_{Z,cand} < 95 GeV",
+        "kind": "none",
+        "label": "BDT input: m_{Z,cand} (v_fable has no hard m_{Z} window)",
     },
     {
-        "name": "cut8_zcand_p_recoil_kinematics",
-        "hist": "Zcand_p_afterZ",
+        "name": "offshell_w_assignment_delta",
+        "hist": "deltaW_onShell",
+        "xtitle": "|m_{W_{lep}}-m_{W}| - |m_{W_{had}}-m_{W}| [GeV]",
+        "rebin": 4,
+        "xmin": -120.0,
+        "xmax": 120.0,
+        "logy": False,
+        "kind": "none",
+        "label": "BDT diagnostic: positive means leptonic W is more off-shell-like",
+    },
+    {
+        "name": "offshell_w_assignment_zwhypothesis",
+        "hist": "deltaW_onShell_ZWchi2",
+        "xtitle": "#Delta W on-shell score with ZW-#chi^{2} pairing [GeV]",
+        "rebin": 4,
+        "xmin": -120.0,
+        "xmax": 120.0,
+        "logy": False,
+        "kind": "none",
+        "label": "Alternative pairing diagnostic for hadronic-on-shell W events",
+    },
+    {
+        "name": "zwchi2_pairing_diagnostic",
+        "hist": "chi2_ZWpair",
+        "xtitle": "Alternative Z/W pairing #chi^{2}",
+        "rebin": 2,
+        "xmin": 0.0,
+        "xmax": 50.0,
+        "logy": False,
+        "kind": "none",
+        "label": "BDT diagnostic only: no hard #chi^{2}_{ZW} cut",
+    },
+    {
+        "name": "bdt_input_zcand_momentum",
+        "hist": "Zcand_p",
         "xtitle": "p_{Z cand} [GeV]",
         "rebin": 4,
         "xmin": 0.0,
         "xmax": 120.0,
         "logy": False,
-        "kind": "window",
-        "lo": 40.0,
-        "hi": 60.0,
-        "label": "Cut 8: require 40 < p_{Z,cand} < 60 GeV",
-    },
-    {
-        "name": "cut9_hcand_mass_window",
-        "hist": "Hcand_m_afterZp",
-        "xtitle": "m_{H cand} after Z mass and p cuts [GeV]",
-        "rebin": 4,
-        "xmin": 50.0,
-        "xmax": 220.0,
-        "logy": False,
-        "kind": "window",
-        "lo": 120.0,
-        "hi": 135.0,
-        "label": "Cut 9: require 120 < m_{H,cand} < 135 GeV",
-    },
-    {
-        "name": "cut10_recoil_window",
-        "hist": "recoil_m_afterH",
-        "xtitle": "Recoil mass (after H cut) [GeV]",
-        "rebin": 4,
-        "xmin": 50.0,
-        "xmax": 200.0,
-        "logy": False,
-        "kind": "window",
-        "lo": 120.0,
-        "hi": 135.0,
-        "label": "Cut 10: require 120 < m_{recoil} < 135 GeV",
+        "kind": "none",
+        "label": "BDT input: p_{Z,cand} (v_fable has no hard p_{Z} window)",
     },
 ]
-
-CUT_LABELS = [
-    "All",
-    "1lep 10<p<60",
-    "ISO",
-    "Veto extra iso p>20",
-    "10<E_{miss}<55",
-    "N=4+sqrt(d34)>14",
-    "minNconst>8",
-    "85<mZ<95",
-    "40<pZ<60",
-    "120<mHcand<135",
-    "120<recoil<135",
-]
-CUT_IDS = [f"cut{i}" for i in range(len(CUT_LABELS))]
-PERCENT_COL_WIDTH = 12
 
 # ============================================================
 # Style settings
@@ -421,6 +463,22 @@ def _nice_scale_factor(raw_scale):
     return int(10 * base)
 
 
+def _format_cutflow_axis(axis):
+    """Use named cut labels on cutFlow plots instead of bare bin numbers."""
+    if axis is None:
+        return
+    for idx, label in enumerate(CUT_LABELS, start=1):
+        axis.SetBinLabel(idx, label)
+    axis.SetRange(1, len(CUT_LABELS))
+    axis.SetTitle("")
+    axis.SetLabelSize(0.030)
+    axis.SetTitleSize(0.040)
+    try:
+        axis.LabelsOption("d")
+    except AttributeError:
+        pass
+
+
 def _draw_cut_guides(config, ymin, ymax):
     """Draw cut threshold/window guides on the active pad."""
     line_color = ROOT.kGray + 2
@@ -456,6 +514,43 @@ def _draw_cut_guides(config, ymin, ymax):
     latex.DrawLatex(0.15, 0.82, config["label"])
     labels.append(latex)
     return lines, labels
+
+
+def _sum_histograms(filenames, histname, rebin, clone_name):
+    """Sum one or more saved histograms into a detached ROOT histogram."""
+    h_sum = None
+    for filename in filenames:
+        h = getHist(filename, histname)
+        if h is None:
+            continue
+        if rebin > 1:
+            h.Rebin(rebin)
+        if h_sum is None:
+            h_sum = h.Clone(clone_name)
+            h_sum.SetDirectory(0)
+        else:
+            h_sum.Add(h)
+    return h_sum
+
+
+def _integral_in_xrange(hist, xmin, xmax):
+    """Integral over bins whose centers are inside [xmin, xmax)."""
+    total = 0.0
+    axis = hist.GetXaxis()
+    for idx in range(1, hist.GetNbinsX() + 1):
+        center = axis.GetBinCenter(idx)
+        if xmin <= center < xmax:
+            total += hist.GetBinContent(idx)
+    return total
+
+
+def _zero_outside_xrange(hist, xmin, xmax):
+    axis = hist.GetXaxis()
+    for idx in range(1, hist.GetNbinsX() + 1):
+        center = axis.GetBinCenter(idx)
+        if not (xmin <= center < xmax):
+            hist.SetBinContent(idx, 0.0)
+            hist.SetBinError(idx, 0.0)
 
 
 def makeCutDiagnosticPlot(config):
@@ -681,6 +776,112 @@ def makeNormalizedCutDiagnosticPlot(config):
     c.Close()
 
 
+def makeTailNormalizedCutDiagnosticPlot(config):
+    """Normalize only the rejected right-tail region of a cut variable."""
+
+    histname = config["hist"]
+    xtitle = config["xtitle"]
+    rebin = config["rebin"]
+    tail_min = config["tail_norm_min"]
+    tail_max = config.get("tail_norm_max", config["xmax"])
+
+    group_specs = [
+        ("Signal", ["wzp6_ee_hadZH_HWW_ecm240"], ROOT.kRed + 1, 3),
+        ("WW", ["p8_ee_WW_ecm240"], ROOT.kOrange - 3, 2),
+        ("ZZ", ["p8_ee_ZZ_ecm240"], ROOT.kAzure + 1, 2),
+        ("q#bar{q}", ["wz3p6_ee_qq_ecm240"], ROOT.kGreen + 2, 2),
+        ("#tau#tau", ["wz3p6_ee_tautau_ecm240"], ROOT.kGray + 1, 2),
+        (
+            "ZH(other)",
+            [
+                "wzp6_ee_hadZH_Hbb_ecm240",
+                "wzp6_ee_hadZH_Htautau_ecm240",
+                "wzp6_ee_hadZH_Hgg_ecm240",
+                "wzp6_ee_hadZH_Hcc_ecm240",
+                "wzp6_ee_hadZH_HZZ_ecm240",
+            ],
+            ROOT.kTeal - 7,
+            2,
+        ),
+    ]
+
+    plot_hists = []
+    fraction_rows = []
+    for label, filenames, color, width in group_specs:
+        raw = _sum_histograms(filenames, histname, rebin, f"h_{config['name']}_{label}_raw")
+        if raw is None:
+            continue
+        total = _integral_in_xrange(raw, config["xmin"], config["xmax"])
+        tail = _integral_in_xrange(raw, tail_min, tail_max)
+        fraction = tail / total if total > 0.0 else 0.0
+        fraction_rows.append((label, total, tail, 100.0 * fraction, 100.0 * (1.0 - fraction)))
+        if tail <= 0.0:
+            continue
+
+        h = raw.Clone(f"h_{config['name']}_{label}_tail")
+        h.SetDirectory(0)
+        _zero_outside_xrange(h, tail_min, tail_max)
+        h.Scale(1.0 / tail)
+        h.SetLineColor(color)
+        h.SetLineWidth(width)
+        h.SetFillStyle(0)
+        plot_hists.append((h, label))
+
+    if not plot_hists:
+        print(f"Warning: No right-tail histograms found for {histname}")
+        return
+
+    c = ROOT.TCanvas(f"c_tail_{config['name']}", "", 850, 700)
+    c.cd()
+
+    ymax = max(h.GetMaximum() for h, _ in plot_hists) * 1.45
+    for idx, (h, label) in enumerate(plot_hists):
+        h.GetXaxis().SetTitle(xtitle)
+        h.GetYaxis().SetTitle(f"Unit area within I > {tail_min:.2f}")
+        h.GetXaxis().SetRangeUser(tail_min, tail_max)
+        h.SetMinimum(0.0)
+        h.SetMaximum(ymax)
+        h.GetXaxis().SetTitleSize(0.045)
+        h.GetYaxis().SetTitleSize(0.045)
+        h.GetXaxis().SetLabelSize(0.04)
+        h.GetYaxis().SetLabelSize(0.04)
+        h.GetYaxis().SetTitleOffset(1.3)
+        h.Draw("HIST" if idx == 0 else "HIST SAME")
+
+    line = ROOT.TLine(tail_min, 0.0, tail_min, ymax)
+    line.SetLineColor(ROOT.kGray + 2)
+    line.SetLineStyle(7)
+    line.SetLineWidth(3)
+    line.Draw()
+
+    leg = ROOT.TLegend(0.60, 0.58, 0.92, 0.88)
+    leg.SetTextSize(0.030)
+    for h, label in plot_hists:
+        leg.AddEntry(h, label, "l")
+    leg.Draw()
+
+    latex = ROOT.TLatex()
+    latex.SetNDC()
+    latex.SetTextFont(42)
+    latex.SetTextSize(0.040)
+    latex.DrawLatex(0.14, 0.93, "#bf{FCC-ee} #it{Simulation} (right-tail normalized)")
+    latex.SetTextSize(0.031)
+    latex.DrawLatex(0.14, 0.86, f"Each curve is normalized only in the rejected tail I > {tail_min:.2f}")
+    latex.DrawLatex(0.14, 0.81, "Nominal Cut 2 keeps selected leptons with I < 0.20")
+
+    outdir = os.path.join(outputDir, "cut_diagnostics_normalized")
+    os.makedirs(outdir, exist_ok=True)
+    c.SaveAs(os.path.join(outdir, f"{config['name']}_norm.pdf"))
+    c.SaveAs(os.path.join(outdir, f"{config['name']}_norm.png"))
+    c.Close()
+
+    csv_path = os.path.join(outdir, f"{config['name']}_tail_fractions.csv")
+    with open(csv_path, "w", encoding="utf-8") as handle:
+        handle.write("group,total_yield,tail_yield_I_gt_0p20,tail_fraction_pct,kept_fraction_pct\n")
+        for label, total, tail, tail_pct, kept_pct in fraction_rows:
+            handle.write(f"{label},{total:.8g},{tail:.8g},{tail_pct:.6g},{kept_pct:.6g}\n")
+
+
 def collectCutflowData():
     """Collect cutflow yields for all configured processes."""
 
@@ -735,6 +936,21 @@ def collectCutflowData():
         "s_over_b": s_over_b,
         "s_over_sqrt_b": s_over_sqrt_b,
     }
+
+
+def validateCutflowCompatibility():
+    """Avoid silently relabeling stale ROOT outputs as the current cut chain."""
+    extra_bin = len(CUT_LABELS) + 1
+    for fname, label, color, isSignal in processes:
+        h = getHist(fname, "cutFlow")
+        if h is None:
+            continue
+        if h.GetNbinsX() >= extra_bin and abs(h.GetBinContent(extra_bin)) > 1e-9:
+            raise RuntimeError(
+                "The input cutFlow contains a nonzero bin beyond the configured "
+                f"{len(CUT_LABELS) - 1}-cut sequence. These histmaker outputs were "
+                "made with an older selection — rerun histmaker for this tag."
+            )
 
 
 def _format_table_row(label, values, float_fmt=".0f"):
@@ -1028,6 +1244,8 @@ def makePlot(histname, xtitle, rebin, xmin, xmax, logy):
     # Create canvas
     c = ROOT.TCanvas("c", "", 800, 700)
     c.cd()
+    if histname == "cutFlow":
+        c.SetBottomMargin(0.28)
 
     if logy:
         c.SetLogy()
@@ -1104,6 +1322,8 @@ def makePlot(histname, xtitle, rebin, xmin, xmax, logy):
         hs.GetXaxis().SetLabelSize(0.04)
         hs.GetYaxis().SetLabelSize(0.04)
         hs.GetYaxis().SetTitleOffset(1.3)
+        if histname == "cutFlow":
+            _format_cutflow_axis(hs.GetXaxis())
 
     if h_sig_sum:
         h_sig_sum.Draw("HIST SAME")
@@ -1421,6 +1641,8 @@ if __name__ == "__main__":
         print("  fccanalysis run h_hww_lvqq.py")
         sys.exit(1)
 
+    validateCutflowCompatibility()
+
     # Make all stacked plots (unnormalized)
     print("\nGenerating stacked plots (unnormalized)...")
     for hname, xtitle, rebin, xmin, xmax, logy in histograms:
@@ -1440,8 +1662,12 @@ if __name__ == "__main__":
     print("\nGenerating shape comparison plots...")
     shape_hists = [
         ("Zcand_m", "m_{Z cand} [GeV]", 4, 0, 200),
-        ("Wstar_m", "m_{W*} [GeV]", 4, 0, 150),
+        ("Wstar_m", "m_{W_{had}} from Z-priority pairing [GeV]", 4, 0, 150),
+        ("Whad_m_ZWchi2", "m_{W_{had}} from ZW-#chi^{2} pairing [GeV]", 4, 0, 150),
+        ("deltaW_onShell", "|m_{W_{lep}}-m_W| - |m_{W_{had}}-m_W| [GeV]", 4, -120, 120),
+        ("chi2_ZWpair", "Alternative Z/W pairing #chi^{2}", 2, 0, 50),
         ("Hcand_m", "m_{H cand} [GeV]", 4, 50, 250),
+        ("Hcand_m_ZWchi2", "m_{H cand} from ZW-#chi^{2} pairing [GeV]", 4, 50, 250),
         ("recoil_m", "Recoil mass [GeV]", 4, 50, 200),
         ("deltaZ", "|m_{jj} - m_{Z}| [GeV]", 4, 0, 50),
         ("lepton_p", "Lepton momentum [GeV]", 4, 0, 150),
@@ -1472,7 +1698,10 @@ if __name__ == "__main__":
     for config in CUT_DIAGNOSTICS:
         print(f"  {config['name']}...")
         makeCutDiagnosticPlot(config)
-        makeNormalizedCutDiagnosticPlot(config)
+        if "tail_norm_min" in config:
+            makeTailNormalizedCutDiagnosticPlot(config)
+        else:
+            makeNormalizedCutDiagnosticPlot(config)
 
     print(f"All plots saved to: {outputDir}")
     print("Done!")

@@ -23,7 +23,6 @@ from ml_config import (
     DEFAULT_MODEL_DIR,
     DEFAULT_TREEMAKER_DIR,
     QQ_SAMPLES,
-    SAMPLE_PROCESSING_FRACTIONS,
     SIGNAL_SAMPLES,
     WW_SAMPLES,
     ZZ_SAMPLES,
@@ -74,10 +73,10 @@ def normalize(values: np.ndarray) -> np.ndarray:
     return values / total if total > 0.0 else values.copy()
 
 
-def sample_phys_weight(sample: str) -> float:
+def sample_phys_weight(sample: str, processed_events: float | None = None) -> float:
     info = SAMPLE_INFO[sample]
-    frac = SAMPLE_PROCESSING_FRACTIONS.get(sample, 1.0)
-    return INT_LUMI * info["xsec"] / (info["ngen"] * frac)
+    norm_events = processed_events if processed_events and processed_events > 0.0 else info["ngen"]
+    return INT_LUMI * info["xsec"] / norm_events
 
 
 def load_weighted_branch(samples: list[str], branch_name: str) -> tuple[np.ndarray, np.ndarray]:
@@ -89,6 +88,12 @@ def load_weighted_branch(samples: list[str], branch_name: str) -> tuple[np.ndarr
         with uproot.open(path) as root_file:
             if "events" not in root_file:
                 continue
+            processed_events = None
+            if "eventsProcessed" in root_file:
+                try:
+                    processed_events = float(root_file["eventsProcessed"].member("fVal"))
+                except Exception:
+                    processed_events = None
             tree = root_file["events"]
             if branch_name not in tree:
                 continue
@@ -97,7 +102,7 @@ def load_weighted_branch(samples: list[str], branch_name: str) -> tuple[np.ndarr
         if sample_values.size == 0:
             continue
 
-        sample_weight = sample_phys_weight(sample)
+        sample_weight = sample_phys_weight(sample, processed_events)
         values_list.append(sample_values)
         weights_list.append(np.full(sample_values.shape, sample_weight, dtype=float))
 
@@ -112,7 +117,7 @@ def make_pairing_validation() -> None:
         ("Zcand_m", r"$m_{Z,\mathrm{cand}}$ [GeV]", 91.1876, (40.0, 140.0), r"$Z$ candidate"),
         ("Wstar_m", r"$m_{W^*}$ [GeV]", None, (0.0, 95.0), r"Hadronic $W^*$ candidate"),
         ("Wlep_m", r"$m_{W,\mathrm{lep}}$ [GeV]", 80.379, (30.0, 150.0), r"Leptonic $W$ candidate"),
-        ("Hcand_m_final", r"$m_{H,\mathrm{cand}}$ [GeV]", 125.0, (95.0, 155.0), r"Higgs candidate"),
+        ("Hcand_m", r"$m_{H,\mathrm{cand}}$ [GeV]", 125.0, (95.0, 155.0), r"Higgs candidate"),
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(9.2, 6.8))
@@ -184,8 +189,7 @@ def make_d34_distribution() -> None:
     bins = np.linspace(0.0, 60.0, 31)
 
     for label, samples, color, linewidth in group_specs:
-        values, weights = load_weighted_branch(samples, "d_34")
-        x = np.sqrt(np.clip(values, 0.0, None))
+        x, weights = load_weighted_branch(samples, "sqrt_d34")
         total = float(np.sum(weights))
         norm_weights = weights / total if total > 0.0 else weights
         ax.hist(
@@ -245,7 +249,7 @@ def make_analysis_workflow() -> None:
             "fc": "#F9EFE5",
             "ec": "#E69F00",
             "title": "treemaker",
-            "lines": ["selected ntuples", "20 BDT input features"],
+            "lines": ["selected ntuples", "26 BDT input features"],
         },
         {
             "xy": (0.63, 0.26),

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Regenerate ROC plots for the BDT classifier.
 
-By default this writes the paper ROC figure from the 5-fold cross-validated
-scores used in the final fit. An optional diagnostic train/test ROC can also be
-produced for development checks.
+By default this writes the train/test ROC figure to roc_curve.{png,pdf}, matching
+the diagnostic plot produced during training. The 5-fold cross-validated ROC is
+kept as a separate roc_curve_kfold.{png,pdf} diagnostic.
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 import numpy as np
@@ -28,6 +29,15 @@ from train_xgboost_bdt import read_samples
 
 MODEL_DIR = ANALYSIS_DIR / DEFAULT_MODEL_DIR
 
+
+def trained_features():
+    """Use the feature list the model was actually trained with, when known."""
+    metrics_path = MODEL_DIR / 'training_metrics.json'
+    if metrics_path.exists():
+        with open(metrics_path) as handle:
+            return json.load(handle).get('features', ML_FEATURES)
+    return ML_FEATURES
+
 def make_axes():
     # Plot
     import matplotlib
@@ -45,7 +55,7 @@ def make_axes():
     return plt, fig, ax
 
 
-def save_kfold_roc(plot_dir: Path) -> float:
+def save_kfold_roc(plot_dir: Path, output_stem: str = "roc_curve_kfold") -> float:
     print('Loading k-fold scores...')
     df = pd.read_csv(MODEL_DIR / 'kfold_scores.csv')
     y = df['y_true']
@@ -58,23 +68,24 @@ def save_kfold_roc(plot_dir: Path) -> float:
     plt, fig, ax = make_axes()
     ax.plot(fpr, tpr, label=f'5-fold AUC = {auc:.4f}')
     ax.legend(loc='lower right')
-    fig.savefig(plot_dir / 'roc_curve.png', dpi=150, bbox_inches='tight')
-    fig.savefig(plot_dir / 'roc_curve.pdf', bbox_inches='tight')
+    fig.savefig(plot_dir / f'{output_stem}.png', dpi=150, bbox_inches='tight')
+    fig.savefig(plot_dir / f'{output_stem}.pdf', bbox_inches='tight')
     plt.close(fig)
     print(f'5-fold AUC: {auc:.4f}')
-    print(f'Saved to {plot_dir}/roc_curve.{{png,pdf}}')
+    print(f'Saved to {plot_dir}/{output_stem}.{{png,pdf}}')
     return float(auc)
 
 
-def save_split_diagnostic(plot_dir: Path) -> tuple[float, float]:
+def save_split_diagnostic(plot_dir: Path, output_stem: str = "roc_curve") -> tuple[float, float]:
     print('Loading data for split diagnostic...')
+    features = trained_features()
     sig_df = read_samples(DEFAULT_TREEMAKER_DIR, DEFAULT_TREE_NAME,
-                          SIGNAL_SAMPLES, ML_FEATURES, 1)
+                          SIGNAL_SAMPLES, features, 1)
     bkg_df = read_samples(DEFAULT_TREEMAKER_DIR, DEFAULT_TREE_NAME,
-                          BACKGROUND_SAMPLES, ML_FEATURES, 0)
+                          BACKGROUND_SAMPLES, features, 0)
     full_df = pd.concat([sig_df, bkg_df], ignore_index=True)
 
-    available_features = [f for f in ML_FEATURES if f in full_df.columns]
+    available_features = [f for f in features if f in full_df.columns]
     X = full_df[available_features].copy()
     y = full_df['label']
     w = full_df['phys_weight'].astype(float)
@@ -107,12 +118,16 @@ def save_split_diagnostic(plot_dir: Path) -> tuple[float, float]:
     ax.plot(fpr_test, tpr_test, label=f'Test AUC = {test_auc:.4f}')
     ax.plot(fpr_train, tpr_train, '--', label=f'Train AUC = {train_auc:.4f}')
     ax.legend(loc='lower right')
-    fig.savefig(plot_dir / 'roc_curve_split.png', dpi=150, bbox_inches='tight')
-    fig.savefig(plot_dir / 'roc_curve_split.pdf', bbox_inches='tight')
+    fig.savefig(plot_dir / f'{output_stem}.png', dpi=150, bbox_inches='tight')
+    fig.savefig(plot_dir / f'{output_stem}.pdf', bbox_inches='tight')
+    if output_stem != 'roc_curve_split':
+        # Backwards-compatible diagnostic name used in earlier notes/scripts.
+        fig.savefig(plot_dir / 'roc_curve_split.png', dpi=150, bbox_inches='tight')
+        fig.savefig(plot_dir / 'roc_curve_split.pdf', bbox_inches='tight')
     plt.close(fig)
     print(f'Train AUC: {train_auc:.4f}')
     print(f'Test AUC:  {test_auc:.4f}')
-    print(f'Saved to {plot_dir}/roc_curve_split.{{png,pdf}}')
+    print(f'Saved to {plot_dir}/{output_stem}.{{png,pdf}}')
     return float(train_auc), float(test_auc)
 
 
@@ -121,7 +136,17 @@ def parse_args():
     parser.add_argument(
         "--with-split-diagnostic",
         action="store_true",
-        help="Also regenerate the train/test ROC as roc_curve_split.{png,pdf}.",
+        help="Deprecated: train/test ROC is now the default and is also written as roc_curve_split.",
+    )
+    parser.add_argument(
+        "--skip-kfold",
+        action="store_true",
+        help="Only write the train/test ROC; skip roc_curve_kfold.{png,pdf}.",
+    )
+    parser.add_argument(
+        "--kfold-only",
+        action="store_true",
+        help="Write only the k-fold ROC to roc_curve.{png,pdf} for legacy paper plots.",
     )
     return parser.parse_args()
 
@@ -129,9 +154,13 @@ def main():
     args = parse_args()
     plot_dir = MODEL_DIR / 'plots'
     plot_dir.mkdir(exist_ok=True)
-    save_kfold_roc(plot_dir)
-    if args.with_split_diagnostic:
-        save_split_diagnostic(plot_dir)
+    if args.kfold_only:
+        save_kfold_roc(plot_dir, output_stem='roc_curve')
+        return
+
+    save_split_diagnostic(plot_dir, output_stem='roc_curve')
+    if not args.skip_kfold and (MODEL_DIR / 'kfold_scores.csv').exists():
+        save_kfold_roc(plot_dir, output_stem='roc_curve_kfold')
 
 if __name__ == '__main__':
     main()

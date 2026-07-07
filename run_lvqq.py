@@ -63,24 +63,40 @@ def step_scanmaker() -> None:
     run_bash(fccanalysis_run_command(), needs_setup=True, extra_env={"LVQQ_MODE": "scanmaker"})
 
 
+# The ML/fit steps run inside the Key4hep environment: it provides xgboost,
+# uproot, sklearn, plus the user-site pyhf + iminuit needed for MINUIT errors.
+# The default login python (miniforge) lacks iminuit, so needs_setup=True here
+# keeps login-node and Slurm-node behaviour identical.
 def step_train() -> None:
-    run_bash("python3 ml/train_xgboost_bdt.py")
+    run_bash("python3 ml/train_xgboost_bdt.py", needs_setup=True)
 
 
 def step_apply() -> None:
-    run_bash("python3 ml/apply_xgboost_bdt.py")
+    run_bash("python3 ml/apply_xgboost_bdt.py", needs_setup=True)
 
 
 def step_fit() -> None:
-    run_bash("python3 ml/fit_profile_likelihood.py")
+    run_bash("python3 ml/fit_profile_likelihood.py", needs_setup=True)
+
+
+def step_fit_categories() -> None:
+    run_bash("python3 ml/fit_profile_likelihood.py --split-w-categories", needs_setup=True)
 
 
 def step_cutscan() -> None:
-    run_bash("python3 ml/scan_preselection_cuts.py")
+    run_bash("python3 ml/scan_preselection_cuts.py", needs_setup=True)
 
 
 def step_roc_plot() -> None:
-    run_bash("python3 ml/regenerate_roc.py")
+    run_bash("python3 ml/regenerate_roc.py", needs_setup=True)
+
+
+def step_cut_strength_tables() -> None:
+    run_bash("python3 make_cut_strength_tables.py", needs_setup=True)
+
+
+def step_cuts_by_stage() -> None:
+    run_bash("python3 make_cuts_by_stage.py", needs_setup=True)
 
 
 def step_supporting_figures() -> None:
@@ -93,6 +109,8 @@ def step_sync_paper_figures() -> None:
 
 def step_plots() -> None:
     run_bash("python3 plots_lvqq.py", needs_setup=True)
+    step_cut_strength_tables()
+    step_cuts_by_stage()
     step_roc_plot()
     step_supporting_figures()
     step_sync_paper_figures()
@@ -182,12 +200,14 @@ def parse_args() -> argparse.Namespace:
             "train",
             "apply",
             "fit",
+            "fitcats",
             "plots",
             "cutplots",
             "analysis",
             "paper",
             "stage1",
             "ml",
+            "mlcats",
             "all",
         ],
         help="Workflow target to run",
@@ -332,6 +352,7 @@ def main() -> None:
         "train": [("train", step_train)],
         "apply": [("apply", step_apply)],
         "fit": [("fit", step_fit)],
+        "fitcats": [("fit categories", step_fit_categories)],
         "plots": [("plots", step_plots)],
         "cutplots": [("histmaker", step_histmaker), ("cut plots", step_cut_plots)],
         "analysis": [
@@ -345,6 +366,7 @@ def main() -> None:
         "paper": [("paper", step_paper)],
         "stage1": [("histmaker", step_histmaker), ("treemaker", step_treemaker)],
         "ml": [("train", step_train), ("apply", step_apply), ("fit", step_fit)],
+        "mlcats": [("train", step_train), ("apply", step_apply), ("fit categories", step_fit_categories)],
         "all": [
             ("histmaker", step_histmaker),
             ("treemaker", step_treemaker),

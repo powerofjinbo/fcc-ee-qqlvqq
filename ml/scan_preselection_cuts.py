@@ -2,8 +2,10 @@
 """Fast cut scans from the loose lvqq scanmaker ntuples.
 
 The scanmaker output keeps events after the nominal Cut1 lepton candidate and
-successful exclusive 4-jet reconstruction.  The Cut5 topology scans are then
-evaluated with the fixed downstream Z, H-candidate, and recoil windows.
+successful exclusive 4-jet reconstruction.  The scans below use the current
+cut-based baseline through the Z-candidate momentum requirement.  The Higgs
+candidate and recoil masses are retained as diagnostic/fit-shape variables, but
+they are not part of the nominal hard-cut baseline.
 """
 
 from __future__ import annotations
@@ -51,14 +53,11 @@ ISO_LEPTON_COUNT_BRANCH = {threshold: f"n_iso_leptons_p{threshold}" for threshol
 LEPTON_ISO_MAX = 0.20
 MISSING_E_MIN = 10.0
 MISSING_E_MAX = 55.0
-Z_MASS_MIN = 85.0
-Z_MASS_MAX = 95.0
-HCAND_M_MIN = 120.0
-HCAND_M_MAX = 140.0
-RECOIL_M_MIN = 120.0
-RECOIL_M_MAX = 140.0
+ZCAND_P_MIN = 40.0
+ZCAND_P_MAX = 60.0
 SQRT_D34_BASELINE = 14.0
-DEFAULT_OUTPUT_DIR = "cut_scans_v3_hcand120_140"
+MIN_JET_NCONST_BASELINE = 8.0
+DEFAULT_OUTPUT_DIR = "cut_scans_v_fable_baseline"
 
 
 def sample_group(sample: str, label: int) -> str:
@@ -181,22 +180,30 @@ def baseline_masks(frame: pd.DataFrame) -> dict[str, np.ndarray]:
     iso = frame["lepton_iso"].to_numpy() < LEPTON_ISO_MAX
     met_e = frame["missingEnergy_e"].to_numpy()
     met = (met_e > MISSING_E_MIN) & (met_e < MISSING_E_MAX)
-    zcand_m = frame["Zcand_m"].to_numpy()
-    z = (zcand_m > Z_MASS_MIN) & (zcand_m < Z_MASS_MAX)
-    hcand_m = frame["Hcand_m"].to_numpy()
-    h = (hcand_m > HCAND_M_MIN) & (hcand_m < HCAND_M_MAX)
-    recoil_m = frame["recoil_m"].to_numpy()
-    recoil = (recoil_m > RECOIL_M_MIN) & (recoil_m < RECOIL_M_MAX)
+    sqrt_d34 = frame["sqrt_d34"].to_numpy()
+    topology = sqrt_d34 > SQRT_D34_BASELINE
+    min_jet_nconst = frame["min_jet_nconst"].to_numpy()
+    nconst = min_jet_nconst > MIN_JET_NCONST_BASELINE
+    zcand_dm = frame["Zcand_dm"].to_numpy()
+    # v_fable baseline has NO hard mZ window (Zcand_dm is a BDT input). Keep an
+    # all-pass mask so the z-window scan still measures what ADDING a window
+    # would do relative to the nominal baseline.
+    z = np.ones(len(zcand_dm), dtype=bool)
+    zcand_p = frame["Zcand_p"].to_numpy()
+    # v_fable baseline has NO hard pZ window either (BDT input); all-pass mask
+    # keeps the pZ/recoil scans meaningful as add-a-window studies.
+    z_p = np.ones(len(zcand_p), dtype=bool)
     preselection = cut1 & iso & cut3 & met
     return {
         "lepton": cut1 & cut3,
         "iso": iso,
         "met": met,
+        "topology": topology,
+        "nconst": nconst,
         "z": z,
-        "h": h,
-        "recoil": recoil,
+        "z_p": z_p,
         "preselection": preselection,
-        "baseline": preselection & z & h & recoil,
+        "baseline": preselection & topology & nconst & z & z_p,
     }
 
 
@@ -223,7 +230,7 @@ def accumulate_scans(frame: pd.DataFrame, accumulators: dict[str, dict]) -> None
     recoil_m = frame["recoil_m"].to_numpy()
     zcand_dm = frame["Zcand_dm"].to_numpy()
 
-    other_for_lepton = masks["iso"] & masks["met"] & masks["z"] & masks["h"] & masks["recoil"]
+    other_for_lepton = masks["iso"] & masks["met"] & masks["topology"] & masks["nconst"] & masks["z"] & masks["z_p"]
     for pmin in (10, 15, 20, 25, 30):
         for pmax in (50, 60, 70, 80, 100, math.inf):
             if pmax <= pmin:
@@ -258,12 +265,12 @@ def accumulate_scans(frame: pd.DataFrame, accumulators: dict[str, dict]) -> None
                 mask = other_for_lepton & window & n_iso
                 update_yield(accumulators["lepton_fine"], (pmin, pmax, "isolated", veto), mask, groups, weights)
 
-    other_for_iso = masks["lepton"] & masks["met"] & masks["z"] & masks["h"] & masks["recoil"]
+    other_for_iso = masks["lepton"] & masks["met"] & masks["topology"] & masks["nconst"] & masks["z"] & masks["z_p"]
     for iso_max in (0.05, 0.10, 0.15, 0.20, 0.30, 0.50, 1.00):
         mask = other_for_iso & (lepton_iso < iso_max)
         update_yield(accumulators["iso"], (iso_max,), mask, groups, weights)
 
-    other_for_met = masks["lepton"] & masks["iso"] & masks["z"] & masks["h"] & masks["recoil"]
+    other_for_met = masks["lepton"] & masks["iso"] & masks["topology"] & masks["nconst"] & masks["z"] & masks["z_p"]
     for met_min in (0, 5, 10, 15, 20):
         for cos_max in (0.95, 0.98, 0.99, 1.00):
             mask = other_for_met & (met_e > met_min) & (cos_miss < cos_max)
@@ -292,9 +299,9 @@ def accumulate_scans(frame: pd.DataFrame, accumulators: dict[str, dict]) -> None
             weights,
         )
 
-    # Cut5 candidates are compared after fixed Cut1-4 plus the temporary
-    # Cut6/Cut7 windows, so the scan answers only the topology-quality question.
-    other_for_topology = masks["baseline"]
+    # Cut5 candidates are compared after fixed Cut1-4 plus downstream Z
+    # kinematics, so the scan answers only the topology-quality question.
+    other_for_topology = masks["preselection"] & masks["nconst"] & masks["z"] & masks["z_p"]
     for threshold in (0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30):
         mask = other_for_topology & (sqrt_d34 > threshold)
         update_yield(accumulators["sqrt_d34"], (threshold,), mask, groups, weights)
@@ -326,12 +333,12 @@ def accumulate_scans(frame: pd.DataFrame, accumulators: dict[str, dict]) -> None
     for option, option_mask in topology_options.items():
         update_yield(accumulators["cut5_topology_options"], (option,), other_for_topology & option_mask, groups, weights)
 
-    other_for_z = masks["lepton"] & masks["iso"] & masks["met"] & masks["h"] & masks["recoil"]
-    for z_window in (8, 10, 12, 15, 18, 20, 25):
+    other_for_z = masks["lepton"] & masks["iso"] & masks["met"] & masks["topology"] & masks["nconst"] & masks["z_p"]
+    for z_window in (5, 8, 10, 12, 15, 18, 20, 25):
         mask = other_for_z & (zcand_dm < z_window)
         update_yield(accumulators["z_window"], (z_window,), mask, groups, weights)
 
-    other_for_recoil = masks["lepton"] & masks["iso"] & masks["met"] & masks["z"] & masks["h"]
+    other_for_recoil = masks["baseline"]
     for left in (5, 10, 15, 20, 25, 30, 35, 40):
         for right in (5, 10, 15, 20, 25, 30, 35, 40):
             mask = other_for_recoil & (recoil_m > 125.0 - left) & (recoil_m < 125.0 + right)
@@ -342,7 +349,7 @@ def accumulate_validation_hists(frame: pd.DataFrame, hists: dict) -> None:
     masks = baseline_masks(frame)
     labels = frame["label"].to_numpy()
     weights = frame["phys_weight"].to_numpy()
-    validation_mask = masks["lepton"] & masks["iso"] & masks["met"] & masks["z"] & masks["h"]
+    validation_mask = masks["baseline"]
 
     sig_mask = validation_mask & (labels == 1)
     bkg_mask = validation_mask & (labels == 0)
@@ -659,11 +666,11 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
             METRIC,
             output_dir / "cut1_lepton_window_scan",
             "Cut 1: selected-lepton momentum window, best veto per point",
-            baseline=(20, math.inf),
+            baseline=(10, 60),
             legend_title=r"$p_\ell^{max}$",
         )
 
-        cut3 = lepton[(lepton["pmin"] == 20) & np.isinf(lepton["pmax"].astype(float))]
+        cut3 = lepton[(lepton["pmin"] == 10) & np.isclose(lepton["pmax"].astype(float), 60.0)]
         if not cut3.empty:
             save_categorical_line(
                 cut3,
@@ -671,7 +678,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
                 METRIC,
                 output_dir / "cut3_extra_lepton_veto_scan",
                 "Cut 3: extra-lepton veto threshold at baseline lepton window",
-                baseline_x="5",
+                baseline_x="20",
             )
 
     lepton_fine = outputs.get("lepton_fine", pd.DataFrame())
@@ -684,7 +691,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
             METRIC,
             output_dir / "cut1_fine_lepton_window_scan",
             "Cut 1 fine scan, best veto per point",
-            baseline=(20, math.inf),
+            baseline=(10, 60),
             legend_title=r"$p_\ell^{max}$",
         )
 
@@ -754,7 +761,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
         "sqrt_d34_min",
         METRIC,
         output_dir / "cut5_sqrt_d34_scan",
-        r"Cut 5 after fixed Z/recoil windows: $\sqrt{d_{34}}$ scan",
+        r"Cut 5 after fixed Z-candidate kinematics: $\sqrt{d_{34}}$ scan",
         baseline_x=SQRT_D34_BASELINE,
     )
     save_line(
@@ -762,7 +769,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
         "min_jet_p_min",
         METRIC,
         output_dir / "cut5_min_jet_p_scan",
-        "Cut 5 after fixed Z/recoil windows: minimum jet momentum scan",
+        "Cut 5 after fixed Z-candidate kinematics: minimum jet momentum scan",
         baseline_x=0,
     )
     save_line(
@@ -770,7 +777,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
         "wstar_m_min",
         METRIC,
         output_dir / "cut5_wstar_mass_scan",
-        r"Cut 5 after fixed Z/recoil windows: $m_{W^*}$ lower-cut scan",
+        r"Cut 5 after fixed Z-candidate kinematics: $m_{W^*}$ lower-cut scan",
         baseline_x=0,
     )
     save_line(
@@ -778,7 +785,7 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
         "deltaR_wstar_min",
         METRIC,
         output_dir / "cut5_deltaR_wstar_scan",
-        r"Cut 5 after fixed Z/recoil windows: $\Delta R_{jj}^{W^*}$ scan",
+        r"Cut 5 after fixed Z-candidate kinematics: $\Delta R_{jj}^{W^*}$ scan",
         baseline_x=0,
     )
     cut5_options = outputs.get("cut5_topology_options", pd.DataFrame())
@@ -797,15 +804,22 @@ def save_plots(outputs: dict[str, pd.DataFrame], hists: dict | None, output_dir:
         fig.savefig(output_dir / "cut5_topology_options.png", dpi=160)
         plt.close(fig)
 
-    save_line(outputs["z_window"], "z_window", METRIC, output_dir / "cut6_z_window_scan", "Cut 6: Z mass-window scan", baseline_x=15)
+    save_line(
+        outputs["z_window"],
+        "z_window",
+        METRIC,
+        output_dir / "optional_z_window_scan",
+        "Optional diagnostic: Z mass-window ADDED on top of the no-window baseline",
+        baseline_x=None,
+    )
     save_multi_line(
         outputs["recoil"],
         "right",
         "left",
         METRIC,
-        output_dir / "cut7_recoil_asymmetric_scan",
-        "Cut 7: asymmetric recoil-window scan",
-        baseline=(20, 20),
+        output_dir / "optional_recoil_asymmetric_scan",
+        "Optional diagnostic: asymmetric recoil-window scan",
+        baseline=None,
         legend_title="left",
     )
     save_validation_plots(hists, output_dir)

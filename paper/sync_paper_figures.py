@@ -34,8 +34,8 @@ APPENDIX_WIDE_PLOTS = [
 APPENDIX_PAIRED_PLOTS = [
     "deltaZ_shape",
     "Wstar_m_shape",
-    "recoil_m_afterZ_norm",
-    "Hcand_m_final_norm",
+    "recoil_m_norm",
+    "Hcand_m_norm",
     "cosTheta_miss_shape",
     "visibleEnergy_shape",
 ]
@@ -47,8 +47,8 @@ PLOT_LABELS = {
     "cosTheta_miss": r"$|\cos\theta_{\mathrm{miss}}|$",
     "visibleEnergy": "Visible energy excluding the selected lepton",
     "Wstar_m": "Reconstructed hadronic W* candidate mass",
-    "Hcand_m_final": "Reconstructed Higgs-candidate mass after the final recoil cut",
-    "recoil_m_afterZ": "Recoil mass after the Z-mass cut",
+    "Hcand_m": "Reconstructed Higgs-candidate mass after the baseline selection",
+    "recoil_m": "Recoil mass after the baseline selection",
     "deltaZ": r"$|m_{jj}-m_Z|$ from the Z-priority pairing",
 }
 
@@ -60,10 +60,10 @@ def caption_for_plot(stem: str) -> str:
         return r"Unit-area comparison of $|m_{jj}-m_Z|$, showing how the Z-priority pairing concentrates the signal near the on-shell Z mass."
     if stem == "Wstar_m_shape":
         return r"Unit-area comparison of the reconstructed $W^*$ mass, illustrating the broad off-shell signal structure relative to the diboson backgrounds."
-    if stem == "recoil_m_afterZ_norm":
-        return "Unit-area recoil-mass comparison after the Z-mass requirement, highlighting the Higgs recoil peak used in the final event selection."
-    if stem == "Hcand_m_final_norm":
-        return "Unit-area Higgs-candidate mass comparison after the final recoil selection."
+    if stem == "recoil_m_norm":
+        return "Unit-area recoil-mass comparison after the full baseline selection."
+    if stem == "Hcand_m_norm":
+        return "Unit-area Higgs-candidate mass comparison after the full baseline selection."
     if stem == "cosTheta_miss_shape":
         return r"Signal-versus-diboson shape comparison of $|\cos\theta_{\mathrm{miss}}|$, which helps suppress forward missing-momentum topologies."
     if stem == "visibleEnergy_shape":

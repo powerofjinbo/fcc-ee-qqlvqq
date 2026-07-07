@@ -65,6 +65,31 @@ int countAbovePAndIso(Vec_rp in, ROOT::VecOps::RVec<float> iso, double threshold
     return count;
 }
 
+bool sameLeptonCandidate(edm4hep::ReconstructedParticleData a, edm4hep::ReconstructedParticleData b) {
+    return std::abs(a.momentum.x - b.momentum.x) < 1e-6 &&
+           std::abs(a.momentum.y - b.momentum.y) < 1e-6 &&
+           std::abs(a.momentum.z - b.momentum.z) < 1e-6 &&
+           std::abs(a.energy - b.energy) < 1e-6 &&
+           a.charge == b.charge;
+}
+
+ROOT::VecOps::RVec<float> extraLeptonMomenta(
+    Vec_rp leptons,
+    ROOT::VecOps::RVec<float> iso,
+    Vec_rp selected,
+    double threshold,
+    double isoMax
+) {
+    ROOT::VecOps::RVec<float> out;
+    const size_t n = leptons.size() < iso.size() ? leptons.size() : iso.size();
+    for(size_t i = 0; i < n; ++i) {
+        if(rp_p(leptons[i]) <= threshold || iso[i] >= isoMax) continue;
+        if(selected.size() > 0 && sameLeptonCandidate(leptons[i], selected[0])) continue;
+        out.push_back(static_cast<float>(rp_p(leptons[i])));
+    }
+    return out;
+}
+
 ROOT::VecOps::RVec<int> jetConstituentCounts(const std::vector<std::vector<int>>& constituents) {
     ROOT::VecOps::RVec<int> counts;
     counts.reserve(constituents.size());
@@ -153,6 +178,86 @@ Vec_tlv pairing_Zpriority_4jets(Vec_tlv J, float mZ=91.19) {
     out.push_back(Zbest);
     out.push_back(Wstar);
     return out;
+}
+
+// Alternative diagnostic pairing that allows the hadronic W to be on-shell.
+// This is intentionally stored as a BDT/validation feature, not used as a hard cut.
+Vec_tlv pairing_ZWchi2_4jets(Vec_tlv J, float mZ=91.19, float mW=80.379,
+                             float sigmaZ=10.0, float sigmaW=15.0) {
+
+    Vec_tlv out;
+    TLorentzVector Zbest, Wbest;
+    double bestScore = 1e99;
+
+    if(J.size() != 4) {
+        out.push_back(Zbest);
+        out.push_back(Wbest);
+        return out;
+    }
+
+    int pairs[3][4] = {
+        {0,1,2,3},
+        {0,2,1,3},
+        {0,3,1,2}
+    };
+
+    for(int ip=0; ip<3; ++ip) {
+        int a=pairs[ip][0], b=pairs[ip][1], c=pairs[ip][2], d=pairs[ip][3];
+        TLorentzVector p1 = J[a] + J[b];
+        TLorentzVector p2 = J[c] + J[d];
+
+        const double score12 =
+            std::pow((p1.M() - mZ) / sigmaZ, 2) +
+            std::pow((p2.M() - mW) / sigmaW, 2);
+        if(score12 < bestScore) {
+            bestScore = score12;
+            Zbest = p1;
+            Wbest = p2;
+        }
+
+        const double score21 =
+            std::pow((p2.M() - mZ) / sigmaZ, 2) +
+            std::pow((p1.M() - mW) / sigmaW, 2);
+        if(score21 < bestScore) {
+            bestScore = score21;
+            Zbest = p2;
+            Wbest = p1;
+        }
+    }
+
+    out.push_back(Zbest);
+    out.push_back(Wbest);
+    return out;
+}
+
+double pairing_ZWchi2_score(Vec_tlv J, float mZ=91.19, float mW=80.379,
+                            float sigmaZ=10.0, float sigmaW=15.0) {
+
+    if(J.size() != 4) return 1e99;
+
+    double bestScore = 1e99;
+    int pairs[3][4] = {
+        {0,1,2,3},
+        {0,2,1,3},
+        {0,3,1,2}
+    };
+
+    for(int ip=0; ip<3; ++ip) {
+        int a=pairs[ip][0], b=pairs[ip][1], c=pairs[ip][2], d=pairs[ip][3];
+        TLorentzVector p1 = J[a] + J[b];
+        TLorentzVector p2 = J[c] + J[d];
+
+        const double score12 =
+            std::pow((p1.M() - mZ) / sigmaZ, 2) +
+            std::pow((p2.M() - mW) / sigmaW, 2);
+        if(score12 < bestScore) bestScore = score12;
+
+        const double score21 =
+            std::pow((p2.M() - mZ) / sigmaZ, 2) +
+            std::pow((p1.M() - mW) / sigmaW, 2);
+        if(score21 < bestScore) bestScore = score21;
+    }
+    return bestScore;
 }
 
 // Returns |mZ_candidate - 91.19| for the best Z pairing

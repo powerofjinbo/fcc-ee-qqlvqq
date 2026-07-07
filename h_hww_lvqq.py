@@ -9,11 +9,10 @@ from ml_config import (
     DEFAULT_HISTMAKER_DIR,
     DEFAULT_SCANMAKER_DIR,
     DEFAULT_TREEMAKER_DIR,
-    ML_FEATURES,
-    ML_SPECTATORS,
     SAMPLE_PROCESSING_FRACTIONS,
     SIGNAL_FRACTION,
     SIGNAL_SAMPLES,
+    TREEMAKER_BRANCHES,
 )
 
 ROOT.TH1.SetDefaultSumw2(ROOT.kTRUE)
@@ -93,6 +92,8 @@ bins_sqrt_d = (480, 0, 120)
 bins_nconst = (80, 0, 80)
 bins_delta_r = (100, 0, 5)
 bins_angle = (100, 0, 3.2)
+bins_delta_w = (240, -120, 120)
+bins_binary = (2, -0.5, 1.5)
 
 LEPTON_P_MIN = 10.0
 LEPTON_P_MAX = 60.0
@@ -104,15 +105,28 @@ SQRT_D34_MIN = 14.0
 MIN_JET_NCONST_MIN = 8.0
 MEAN_JET_NCONST_MIN = 16.0
 MEAN_JET_NCONST_MAX = 30.0
-Z_MASS_MIN = 85.0
-Z_MASS_MAX = 95.0
-ZCAND_P_MIN = 40.0
-ZCAND_P_MAX = 60.0
-HCAND_M_MIN = 120.0
-HCAND_M_MAX = 135.0
-RECOIL_M_MIN = 120.0
-RECOIL_M_MAX = 135.0
-
+Z_MASS = 91.19
+W_MASS = 80.379
+# v_fable: no hard Z-candidate mass or momentum window. Zcand_m/Zcand_dm and
+# Zcand_p are BDT inputs. Full profile-likelihood window scans
+# (ml/scan_zcand_windows.py) showed every candidate window on either variable
+# degrades the 20-bin shape-fit precision relative to no window.
+#
+# Optional study knob: LVQQ_ZCAND_P_WINDOW="lo,hi" reinstates a hard Zcand_p
+# window (applied as a plain filter; it does NOT get its own cutFlow stage).
+_zcand_p_raw = os.environ.get("LVQQ_ZCAND_P_WINDOW", "none").strip().lower()
+if _zcand_p_raw in ("none", "off", ""):
+    APPLY_ZCAND_P_CUT = False
+    ZCAND_P_MIN = ZCAND_P_MAX = None
+else:
+    APPLY_ZCAND_P_CUT = True
+    try:
+        ZCAND_P_MIN, ZCAND_P_MAX = (float(x) for x in _zcand_p_raw.split(","))
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Invalid LVQQ_ZCAND_P_WINDOW={_zcand_p_raw!r}; use 'lo,hi' or 'none'"
+        ) from exc
+    print(f"[lvqq] study override: Zcand_p window {ZCAND_P_MIN}-{ZCAND_P_MAX} GeV")
 
 def build_graph_lvqq(df, dataset):
     hists = []
@@ -121,7 +135,7 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("weight", "1.0")
     weightsum = df.Sum("weight")
 
-    for i in range(0, 11):
+    for i in range(0, 10):
         df = df.Define(f"cut{i}", str(i))
 
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut0"))
@@ -152,6 +166,18 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("lepton_iso_all_v", "FCCAnalyses::coneIsolation(0.01, 0.30)(leptons_all, ReconstructedParticles)")
     df = df.Define("n_iso_leptons_p10", f"FCCAnalyses::countAbovePAndIso(leptons_all, lepton_iso_all_v, 10.0, {LEPTON_ISO_MAX})")
     df = df.Define(
+        "isolated_leptons_p10",
+        f"FCCAnalyses::selectAbovePAndIso(leptons_all, lepton_iso_all_v, {LEPTON_P_MIN}, {LEPTON_ISO_MAX})",
+    )
+    df = df.Define(
+        "isolated_leptons_p10_p60",
+        f"FCCAnalyses::selectPWindow(isolated_leptons_p10, {LEPTON_P_MIN}, {LEPTON_P_MAX})",
+    )
+    df = df.Define(
+        "n_iso_leptons_p10_p60",
+        "FCCAnalyses::ReconstructedParticle::get_n(isolated_leptons_p10_p60)",
+    )
+    df = df.Define(
         "n_iso_leptons_p20",
         f"FCCAnalyses::countAbovePAndIso(leptons_all, lepton_iso_all_v, {EXTRA_ISO_LEPTON_P_MIN}, {LEPTON_ISO_MAX})",
     )
@@ -166,16 +192,22 @@ def build_graph_lvqq(df, dataset):
     hists.append(df.Histo1D(("lepton_iso", "", *bins_iso), "lepton_iso"))
     hists.append(df.Histo1D(("lepton_iso_after_cut1", "", *bins_iso), "lepton_iso"))
     hists.append(df.Histo1D(("n_iso_leptons_p10_after_cut1", "", *bins_nlep), "n_iso_leptons_p10"))
+    hists.append(df.Histo1D(("n_iso_leptons_p10_p60_after_cut1", "", *bins_nlep), "n_iso_leptons_p10_p60"))
     hists.append(df.Histo1D(("n_extra_iso_leptons_p20_after_cut1", "", *bins_nlep), "n_extra_iso_leptons_p20"))
     df = df.Filter(f"lepton_iso < {LEPTON_ISO_MAX}")
     hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut2"))
 
-    # cut3: veto events with an additional hard isolated lepton.
-    # This keeps signal leptons in the 10-20 GeV range while rejecting
-    # multi-lepton backgrounds with an extra isolated lepton above 20 GeV.
+    # cut3: veto events with an additional hard lepton candidate.
+    # The internal counter uses the same isolation definition as the selected
+    # lepton, but the cut is presented as an extra-lepton veto.
     hists.append(df.Histo1D(("n_iso_leptons_p10", "", *bins_nlep), "n_iso_leptons_p10"))
     hists.append(df.Histo1D(("n_iso_leptons_p10_after_cut2", "", *bins_nlep), "n_iso_leptons_p10"))
     hists.append(df.Histo1D(("n_extra_iso_leptons_p20", "", *bins_nlep), "n_extra_iso_leptons_p20"))
+    df = df.Define(
+        "extra_iso_lepton_p_after_cut2",
+        f"FCCAnalyses::extraLeptonMomenta(leptons_all, lepton_iso_all_v, selected_lepton, {LEPTON_P_MIN}, {LEPTON_ISO_MAX})",
+    )
+    hists.append(df.Histo1D(("extra_iso_lepton_p_after_cut2", "", *bins_p), "extra_iso_lepton_p_after_cut2"))
 
     df = df.Define("missingEnergy_rp", "FCCAnalyses::missingEnergy(ecm, ReconstructedParticles)")
     df = df.Define("missingEnergy_e", "missingEnergy_rp[0].energy")
@@ -279,22 +311,46 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("jets_py", "FCCAnalyses::JetClusteringUtils::get_py(jets)")
     df = df.Define("jets_pz", "FCCAnalyses::JetClusteringUtils::get_pz(jets)")
     df = df.Define("jets_tlv", "FCCAnalyses::makeLorentzVectors(jets_px, jets_py, jets_pz, jets_e)")
-    df = df.Define("paired_ZWstar", "FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, 91.19)")
-    df = df.Define("deltaZ", "FCCAnalyses::pairing_Zpriority_deltaZ(jets_tlv, 91.19)")
-    df = df.Define("deltaR_Wstar", "FCCAnalyses::pairing_Zpriority_deltaR_Wstar(jets_tlv, 91.19)")
-    df = df.Define("angle_Wstar_jj", "FCCAnalyses::pairing_Zpriority_angle_Wstar(jets_tlv, 91.19)")
+    df = df.Define("paired_ZWstar", f"FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, {Z_MASS})")
+    df = df.Define("paired_ZWchi2", f"FCCAnalyses::pairing_ZWchi2_4jets(jets_tlv, {Z_MASS}, {W_MASS}, 10.0, 15.0)")
+    df = df.Define("deltaZ", f"FCCAnalyses::pairing_Zpriority_deltaZ(jets_tlv, {Z_MASS})")
+    df = df.Define("chi2_ZWpair", f"FCCAnalyses::pairing_ZWchi2_score(jets_tlv, {Z_MASS}, {W_MASS}, 10.0, 15.0)")
+    df = df.Define("deltaR_Wstar", f"FCCAnalyses::pairing_Zpriority_deltaR_Wstar(jets_tlv, {Z_MASS})")
+    df = df.Define("angle_Wstar_jj", f"FCCAnalyses::pairing_Zpriority_angle_Wstar(jets_tlv, {Z_MASS})")
 
     df = df.Define("Zcand", "paired_ZWstar[0]")
     df = df.Define("Wstar", "paired_ZWstar[1]")
+    df = df.Define("Whad", "Wstar")
     df = df.Define("Zcand_m", "Zcand.M()")
     df = df.Define("Zcand_p", "Zcand.P()")
-    df = df.Define("Zcand_dm", "abs(Zcand_m - 91.19)")
+    df = df.Define("Zcand_dm", f"abs(Zcand_m - {Z_MASS})")
     df = df.Define("Wstar_m", "Wstar.M()")
+    df = df.Define("Whad_m", "Whad.M()")
+    df = df.Define("Whad_p", "Whad.P()")
+
+    df = df.Define("Zcand_ZWchi2", "paired_ZWchi2[0]")
+    df = df.Define("Whad_ZWchi2", "paired_ZWchi2[1]")
+    df = df.Define("Zcand_m_ZWchi2", "Zcand_ZWchi2.M()")
+    df = df.Define("Zcand_p_ZWchi2", "Zcand_ZWchi2.P()")
+    df = df.Define("Zcand_dm_ZWchi2", f"abs(Zcand_m_ZWchi2 - {Z_MASS})")
+    df = df.Define("Whad_m_ZWchi2", "Whad_ZWchi2.M()")
+    df = df.Define("Whad_p_ZWchi2", "Whad_ZWchi2.P()")
+    df = df.Define("delta_pairing_Zcand_m", "abs(Zcand_m - Zcand_m_ZWchi2)")
+    df = df.Define("delta_pairing_Whad_m", "abs(Whad_m - Whad_m_ZWchi2)")
 
     hists.append(df.Histo1D(("Zcand_m", "", *bins_m), "Zcand_m"))
     hists.append(df.Histo1D(("Zcand_p", "", *bins_p), "Zcand_p"))
     hists.append(df.Histo1D(("Wstar_m", "", *bins_m), "Wstar_m"))
+    hists.append(df.Histo1D(("Whad_m", "", *bins_m), "Whad_m"))
+    hists.append(df.Histo1D(("Whad_p", "", *bins_p), "Whad_p"))
     hists.append(df.Histo1D(("deltaZ", "", *bins_chi2), "deltaZ"))
+    hists.append(df.Histo1D(("chi2_ZWpair", "", *bins_chi2), "chi2_ZWpair"))
+    hists.append(df.Histo1D(("Zcand_m_ZWchi2", "", *bins_m), "Zcand_m_ZWchi2"))
+    hists.append(df.Histo1D(("Zcand_p_ZWchi2", "", *bins_p), "Zcand_p_ZWchi2"))
+    hists.append(df.Histo1D(("Whad_m_ZWchi2", "", *bins_m), "Whad_m_ZWchi2"))
+    hists.append(df.Histo1D(("Whad_p_ZWchi2", "", *bins_p), "Whad_p_ZWchi2"))
+    hists.append(df.Histo1D(("delta_pairing_Zcand_m", "", *bins_m), "delta_pairing_Zcand_m"))
+    hists.append(df.Histo1D(("delta_pairing_Whad_m", "", *bins_m), "delta_pairing_Whad_m"))
     hists.append(df.Histo1D(("deltaR_Wstar", "", *bins_delta_r), "deltaR_Wstar"))
     hists.append(df.Histo1D(("angle_Wstar_jj", "", *bins_angle), "angle_Wstar_jj"))
 
@@ -306,7 +362,11 @@ def build_graph_lvqq(df, dataset):
     df = df.Define("recoil_tlv", "init_tlv - Zcand")
     df = df.Define("recoil_m", "recoil_tlv.M()")
     df = df.Define("recoil_dmH", "abs(recoil_m - 125.0)")
+    df = df.Define("recoil_tlv_ZWchi2", "init_tlv - Zcand_ZWchi2")
+    df = df.Define("recoil_m_ZWchi2", "recoil_tlv_ZWchi2.M()")
+    df = df.Define("recoil_dmH_ZWchi2", "abs(recoil_m_ZWchi2 - 125.0)")
     hists.append(df.Histo1D(("recoil_m", "", *bins_recoil), "recoil_m"))
+    hists.append(df.Histo1D(("recoil_m_ZWchi2", "", *bins_recoil), "recoil_m_ZWchi2"))
 
     df = df.Define(
         "lepton_tlv",
@@ -318,33 +378,42 @@ def build_graph_lvqq(df, dataset):
     )
     df = df.Define("Wlep", "lepton_tlv + nu_tlv")
     df = df.Define("Wlep_m", "Wlep.M()")
+    df = df.Define("Wlep_p", "Wlep.P()")
+    df = df.Define("abs_Wlep_mW", f"abs(Wlep_m - {W_MASS})")
+    df = df.Define("abs_Whad_mW", f"abs(Whad_m - {W_MASS})")
+    df = df.Define("abs_Whad_ZWchi2_mW", f"abs(Whad_m_ZWchi2 - {W_MASS})")
+    df = df.Define("deltaW_onShell", "abs_Wlep_mW - abs_Whad_mW")
+    df = df.Define("deltaW_onShell_ZWchi2", "abs_Wlep_mW - abs_Whad_ZWchi2_mW")
+    df = df.Define("lepW_offshell_like", "deltaW_onShell > 0 ? 1.0 : 0.0")
+    df = df.Define("lepW_onshell_like", "deltaW_onShell < 0 ? 1.0 : 0.0")
+    df = df.Define("hadW_onshell_like", "deltaW_onShell > 0 ? 1.0 : 0.0")
+    df = df.Define("w_topology_category", "deltaW_onShell < 0 ? 0.0 : 1.0")
+    df = df.Define("mW_min", "std::min(Wlep_m, Whad_m)")
+    df = df.Define("mW_max", "std::max(Wlep_m, Whad_m)")
     hists.append(df.Histo1D(("Wlep_m", "", *bins_m), "Wlep_m"))
+    hists.append(df.Histo1D(("Wlep_p", "", *bins_p), "Wlep_p"))
+    hists.append(df.Histo1D(("abs_Wlep_mW", "", *bins_m), "abs_Wlep_mW"))
+    hists.append(df.Histo1D(("abs_Whad_mW", "", *bins_m), "abs_Whad_mW"))
+    hists.append(df.Histo1D(("deltaW_onShell", "", *bins_delta_w), "deltaW_onShell"))
+    hists.append(df.Histo1D(("deltaW_onShell_ZWchi2", "", *bins_delta_w), "deltaW_onShell_ZWchi2"))
+    hists.append(df.Histo1D(("lepW_offshell_like", "", *bins_binary), "lepW_offshell_like"))
+    hists.append(df.Histo1D(("lepW_onshell_like", "", *bins_binary), "lepW_onshell_like"))
+    hists.append(df.Histo1D(("hadW_onshell_like", "", *bins_binary), "hadW_onshell_like"))
+    hists.append(df.Histo1D(("w_topology_category", "", *bins_binary), "w_topology_category"))
+    hists.append(df.Histo1D(("mW_min", "", *bins_m), "mW_min"))
+    hists.append(df.Histo1D(("mW_max", "", *bins_m), "mW_max"))
 
     df = df.Define("Hcand", "Wlep + Wstar")
     df = df.Define("Hcand_m", "Hcand.M()")
+    df = df.Define("Hcand_ZWchi2", "Wlep + Whad_ZWchi2")
+    df = df.Define("Hcand_m_ZWchi2", "Hcand_ZWchi2.M()")
     hists.append(df.Histo1D(("Hcand_m", "", *bins_m), "Hcand_m"))
+    hists.append(df.Histo1D(("Hcand_m_ZWchi2", "", *bins_m), "Hcand_m_ZWchi2"))
 
-    # cut7: optimized Z-candidate mass window
-    df = df.Filter(f"Zcand_m > {Z_MASS_MIN} && Zcand_m < {Z_MASS_MAX}")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut7"))
-    hists.append(df.Histo1D(("Zcand_p_afterZ", "", *bins_p), "Zcand_p"))
-
-    # cut8: production-Z recoil kinematics
-    df = df.Filter(f"Zcand_p > {ZCAND_P_MIN} && Zcand_p < {ZCAND_P_MAX}")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut8"))
-    hists.append(df.Histo1D(("Hcand_m_afterZp", "", *bins_m), "Hcand_m"))
-    hists.append(df.Histo1D(("recoil_m_afterZp", "", *bins_recoil), "recoil_m"))
-
-    # cut9: reconstructed Higgs-candidate mass window
-    df = df.Filter(f"Hcand_m > {HCAND_M_MIN} && Hcand_m < {HCAND_M_MAX}")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut9"))
-    hists.append(df.Histo1D(("Hcand_m_afterH", "", *bins_m), "Hcand_m"))
-    hists.append(df.Histo1D(("recoil_m_afterH", "", *bins_recoil), "recoil_m"))
-
-    # cut10: optimized recoil-mass window
-    df = df.Filter(f"recoil_m > {RECOIL_M_MIN} && recoil_m < {RECOIL_M_MAX}")
-    hists.append(df.Histo1D(("cutFlow", "", *bins_count), "cut10"))
-    hists.append(df.Histo1D(("Hcand_m_final", "", *bins_m), "Hcand_m"))
+    # The baseline selection ends at cut6. Zcand_p/Zcand_m are BDT inputs;
+    # the optional study window below is a plain filter without a cutFlow stage.
+    if APPLY_ZCAND_P_CUT:
+        df = df.Filter(f"Zcand_p > {ZCAND_P_MIN} && Zcand_p < {ZCAND_P_MAX}")
 
     return hists, weightsum, df
 
@@ -394,6 +463,10 @@ def build_graph_scanmaker(df, dataset):
         "n_extra_iso_leptons_p20",
         "std::max(0, n_iso_leptons_p20 - selected_lepton_counts_p20)",
     )
+    df = df.Define(
+        "extra_iso_lepton_p_after_cut2",
+        f"FCCAnalyses::extraLeptonMomenta(leptons_all, lepton_iso_all_v, selected_lepton, {LEPTON_P_MIN}, {LEPTON_ISO_MAX})",
+    )
 
     df = df.Define("missingEnergy_rp", "FCCAnalyses::missingEnergy(ecm, ReconstructedParticles)")
     df = df.Define("missingEnergy_e", "missingEnergy_rp[0].energy")
@@ -435,15 +508,30 @@ def build_graph_scanmaker(df, dataset):
     df = df.Define("jets_py", "FCCAnalyses::JetClusteringUtils::get_py(jets)")
     df = df.Define("jets_pz", "FCCAnalyses::JetClusteringUtils::get_pz(jets)")
     df = df.Define("jets_tlv", "FCCAnalyses::makeLorentzVectors(jets_px, jets_py, jets_pz, jets_e)")
-    df = df.Define("paired_ZWstar", "FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, 91.19)")
-    df = df.Define("deltaR_Wstar", "FCCAnalyses::pairing_Zpriority_deltaR_Wstar(jets_tlv, 91.19)")
-    df = df.Define("angle_Wstar_jj", "FCCAnalyses::pairing_Zpriority_angle_Wstar(jets_tlv, 91.19)")
+    df = df.Define("paired_ZWstar", f"FCCAnalyses::pairing_Zpriority_4jets(jets_tlv, {Z_MASS})")
+    df = df.Define("paired_ZWchi2", f"FCCAnalyses::pairing_ZWchi2_4jets(jets_tlv, {Z_MASS}, {W_MASS}, 10.0, 15.0)")
+    df = df.Define("deltaR_Wstar", f"FCCAnalyses::pairing_Zpriority_deltaR_Wstar(jets_tlv, {Z_MASS})")
+    df = df.Define("angle_Wstar_jj", f"FCCAnalyses::pairing_Zpriority_angle_Wstar(jets_tlv, {Z_MASS})")
+    df = df.Define("chi2_ZWpair", f"FCCAnalyses::pairing_ZWchi2_score(jets_tlv, {Z_MASS}, {W_MASS}, 10.0, 15.0)")
     df = df.Define("Zcand", "paired_ZWstar[0]")
     df = df.Define("Wstar", "paired_ZWstar[1]")
+    df = df.Define("Whad", "Wstar")
     df = df.Define("Zcand_m", "Zcand.M()")
     df = df.Define("Zcand_p", "Zcand.P()")
-    df = df.Define("Zcand_dm", "abs(Zcand_m - 91.19)")
+    df = df.Define("Zcand_dm", f"abs(Zcand_m - {Z_MASS})")
     df = df.Define("Wstar_m", "Wstar.M()")
+    df = df.Define("Whad_m", "Whad.M()")
+    df = df.Define("Whad_p", "Whad.P()")
+
+    df = df.Define("Zcand_ZWchi2", "paired_ZWchi2[0]")
+    df = df.Define("Whad_ZWchi2", "paired_ZWchi2[1]")
+    df = df.Define("Zcand_m_ZWchi2", "Zcand_ZWchi2.M()")
+    df = df.Define("Zcand_p_ZWchi2", "Zcand_ZWchi2.P()")
+    df = df.Define("Zcand_dm_ZWchi2", f"abs(Zcand_m_ZWchi2 - {Z_MASS})")
+    df = df.Define("Whad_m_ZWchi2", "Whad_ZWchi2.M()")
+    df = df.Define("Whad_p_ZWchi2", "Whad_ZWchi2.P()")
+    df = df.Define("delta_pairing_Zcand_m", "abs(Zcand_m - Zcand_m_ZWchi2)")
+    df = df.Define("delta_pairing_Whad_m", "abs(Whad_m - Whad_m_ZWchi2)")
 
     df = df.Define("d_23", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 2)")
     df = df.Define("d_34", "FCCAnalyses::JetClusteringUtils::get_exclusive_dmerge(clustered_jets, 3)")
@@ -457,6 +545,9 @@ def build_graph_scanmaker(df, dataset):
     df = df.Define("recoil_tlv", "init_tlv - Zcand")
     df = df.Define("recoil_m", "recoil_tlv.M()")
     df = df.Define("recoil_dmH", "abs(recoil_m - 125.0)")
+    df = df.Define("recoil_tlv_ZWchi2", "init_tlv - Zcand_ZWchi2")
+    df = df.Define("recoil_m_ZWchi2", "recoil_tlv_ZWchi2.M()")
+    df = df.Define("recoil_dmH_ZWchi2", "abs(recoil_m_ZWchi2 - 125.0)")
     df = df.Define(
         "lepton_tlv",
         "TLorentzVector v; v.SetPxPyPzE(selected_lepton[0].momentum.x, selected_lepton[0].momentum.y, selected_lepton[0].momentum.z, selected_lepton[0].energy); return v;",
@@ -467,20 +558,31 @@ def build_graph_scanmaker(df, dataset):
     )
     df = df.Define("Wlep", "lepton_tlv + nu_tlv")
     df = df.Define("Wlep_m", "Wlep.M()")
+    df = df.Define("Wlep_p", "Wlep.P()")
+    df = df.Define("abs_Wlep_mW", f"abs(Wlep_m - {W_MASS})")
+    df = df.Define("abs_Whad_mW", f"abs(Whad_m - {W_MASS})")
+    df = df.Define("abs_Whad_ZWchi2_mW", f"abs(Whad_m_ZWchi2 - {W_MASS})")
     df = df.Define("Hcand", "Wlep + Wstar")
     df = df.Define("Hcand_m", "Hcand.M()")
-    df = df.Define("deltaW_onShell", "abs(Wlep_m - 80.379) - abs(Wstar_m - 80.379)")
-    df = df.Define(
-        "pass_baseline",
+    df = df.Define("Hcand_ZWchi2", "Wlep + Whad_ZWchi2")
+    df = df.Define("Hcand_m_ZWchi2", "Hcand_ZWchi2.M()")
+    df = df.Define("deltaW_onShell", "abs_Wlep_mW - abs_Whad_mW")
+    df = df.Define("deltaW_onShell_ZWchi2", "abs_Wlep_mW - abs_Whad_ZWchi2_mW")
+    df = df.Define("lepW_offshell_like", "deltaW_onShell > 0 ? 1.0 : 0.0")
+    df = df.Define("lepW_onshell_like", "deltaW_onShell < 0 ? 1.0 : 0.0")
+    df = df.Define("hadW_onshell_like", "deltaW_onShell > 0 ? 1.0 : 0.0")
+    df = df.Define("w_topology_category", "deltaW_onShell < 0 ? 0.0 : 1.0")
+    df = df.Define("mW_min", "std::min(Wlep_m, Whad_m)")
+    df = df.Define("mW_max", "std::max(Wlep_m, Whad_m)")
+    baseline_expr = (
         f"n_leptons_p10_p60 >= 1 && lepton_iso < {LEPTON_ISO_MAX} && n_extra_iso_leptons_p20 == 0 && "
         f"missingEnergy_e > {MISSING_E_MIN} && missingEnergy_e < {MISSING_E_MAX} && "
         f"sqrt_d34 > {SQRT_D34_MIN} && "
-        f"min_jet_nconst > {MIN_JET_NCONST_MIN} && "
-        f"Zcand_m > {Z_MASS_MIN} && Zcand_m < {Z_MASS_MAX} && "
-        f"Zcand_p > {ZCAND_P_MIN} && Zcand_p < {ZCAND_P_MAX} && "
-        f"Hcand_m > {HCAND_M_MIN} && Hcand_m < {HCAND_M_MAX} && "
-        f"recoil_m > {RECOIL_M_MIN} && recoil_m < {RECOIL_M_MAX}",
+        f"min_jet_nconst > {MIN_JET_NCONST_MIN}"
     )
+    if APPLY_ZCAND_P_CUT:
+        baseline_expr += f" && Zcand_p > {ZCAND_P_MIN} && Zcand_p < {ZCAND_P_MAX}"
+    df = df.Define("pass_baseline", baseline_expr)
 
     return df
 
@@ -504,7 +606,7 @@ elif treemaker:
 
         @staticmethod
         def output():
-            return ML_SPECTATORS + ML_FEATURES
+            return TREEMAKER_BRANCHES
 else:
     def build_graph(df, dataset):
         hists, weightsum, df = build_graph_lvqq(df, dataset)
